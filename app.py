@@ -310,6 +310,19 @@ def leaf_dialog():
         close_modal(); st.rerun()
 
 
+@st.dialog("requirement.yaml", width="large")
+def yaml_dialog():
+    req = st.session_state.req
+    text = yaml.dump(S.to_contract(req), sort_keys=False, allow_unicode=True)
+    st.code(text, language="yaml")            # st.code has a built-in copy button
+    fname = (req.get("ticket") or req.get("project") or "requirement").split()[0]
+    c = st.columns(2)
+    c[0].download_button("⬇ Download", text, f"{fname}.requirement.yaml", "text/yaml",
+                         use_container_width=True, type="primary")
+    if c[1].button("Close", use_container_width=True):
+        close_modal(); st.rerun()
+
+
 @st.dialog("Add to group")
 def add_dialog():
     m = st.session_state.modal
@@ -380,8 +393,8 @@ def sidebar():
         fname = (req.get("ticket") or req.get("project") or "requirement").split()[0]
         st.download_button("⬇ Download YAML", text, f"{fname}.requirement.yaml",
                            "text/yaml", use_container_width=True, type="primary")
-        with st.expander("YAML preview", expanded=False):
-            st.code(text, language="yaml")
+        if st.button("👁 Preview YAML", use_container_width=True):
+            open_modal("yaml", {})
         if st.button("New (blank requirement)", use_container_width=True):
             st.session_state.req = S.new_requirement()
             st.session_state.sel = 0; st.rerun()
@@ -431,6 +444,8 @@ def main():
             container_dialog()
         elif mode == "add_to":
             add_dialog()
+        elif mode == "yaml":
+            yaml_dialog()
         else:
             leaf_dialog()
 

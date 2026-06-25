@@ -24,6 +24,14 @@ def test_app_loads_example(page):
     assert page.get_by_role("radio", name="Group B", exact=False).count() >= 1
 
 
+def test_yaml_preview_popup(page):
+    page.get_by_role("button", name=re.compile("Preview YAML")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.count() == 1
+    assert "project:" in dlg.inner_text()
+
+
 def test_default_download_matches_contract(page):
     got = download_yaml(page)
     assert got == S.to_contract(S.build_example())
