@@ -74,6 +74,17 @@ def test_add_exclusion_via_dialog(page):
     assert any(e.get("source") == "TEST_CAT" and e.get("icd") == ["Z99"] for e in excls)
 
 
+def test_add_exclusion_group_no_error(page):
+    before = len(download_yaml(page)["cohorts"][0]["exclusions"])
+    page.get_by_role("button", name=re.compile("Add exclusion group")).click()
+    settle(page)
+    # the app must not raise (a top-level exclusion container previously crashed)
+    assert page.locator("[data-testid='stException']").count() == 0
+    excl = download_yaml(page)["cohorts"][0]["exclusions"]
+    assert len(excl) == before + 1
+    assert any("op" in e for e in excl)            # the new node is a container
+
+
 def test_reorder_exclusion(page):
     before = download_yaml(page)["cohorts"][0]["exclusions"]
     assert len(before) >= 2

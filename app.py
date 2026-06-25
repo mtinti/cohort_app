@@ -403,7 +403,7 @@ def main():
     with st.container(border=True):
         st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
                     unsafe_allow_html=True)
-        render_member(g, g["inclusion"], "", True, False, None, None, is_root=True)
+        render_member(g, g["inclusion"], [], True, False, None, None, is_root=True)
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
@@ -412,7 +412,7 @@ def main():
                     unsafe_allow_html=True)
         n_ex = len(g["exclusions"])
         for i, m in enumerate(g["exclusions"]):
-            render_member(g, m, "", i == n_ex - 1, True, g["exclusions"], i, top=True)
+            render_member(g, m, [], i == n_ex - 1, True, g["exclusions"], i, top=True)
         a = st.columns([2.2, 2.5, 6])
         if a[0].button("➕ Add exclusion"):
             open_modal("add_leaf", S.new_codes(), container="__EXCL__")
