@@ -1,43 +1,47 @@
 # Cohort Requirement Builder
 
-A Streamlit web tool that lets a **researcher author a SHARE/GoSHARE cohort
-requirement directly** — replacing the Word feasibility form *and* the LLM
-extraction stage. It outputs a `requirement.yaml` that is the contract fed to the
-cohort builder (the RDMP `build.script.yaml` assembler in the sibling `rdmp_agent`
-project).
+A Streamlit web tool for authoring a **health-data cohort definition** directly,
+and exporting it as a `requirement.yaml`. A researcher (or analyst) builds the
+cohort logic in a structured form instead of writing prose or YAML by hand; the
+output is a machine-readable contract that downstream tooling can consume.
 
-Why: a typed, structured form removes two proven failure modes of the
-docx→extraction pipeline (criteria lost in Word text boxes; code/range
-mis-transcription) and makes the hard cases — multiple cohorts, and
-event-anchored sample selection — first-class fields instead of prose a model
-must infer.
+Why: a typed, structured form removes whole classes of error (criteria lost in
+free text, mis-transcribed codes) and makes the cohort logic — nested AND/OR
+sets and ordered exclusions — explicit.
+
+## Branches
+
+- **`main`** — general cohort builder for health data (this branch).
+- **`share_cohort_builder`** — the SHARE/GoSHARE variant, which additionally
+  supports **biobank sample / event-anchored selection** ("has ≥1 sample
+  before/after a hospitalisation / prescription / diagnosis index date") and
+  maps onto the RDMP cohort-build pipeline.
 
 ## Design in one picture
 
-The requirement **mirrors how an RDMP CIC is built**, so every block has a visible
-counterpart in the build (the "link"), without being a second RDMP editor:
+The requirement mirrors how a cohort is built:
 
 ```
-Root container = EXCEPT
-  child 1  = INCLUSION container   (base population, built first)   AND→INTERSECT, OR→UNION
-  child 2+ = EXCLUSION sets        (subtracted in turn, in the order the researcher lists)
+INCLUSION container  (base population, built first)   op: AND→INTERSECT (all of) / OR→UNION (any of)
+EXCLUSIONS           (an ordered list, removed in turn)
 ```
 
-Each **group** is fully self-contained (= one complete RDMP build). See the
-annotated, worked output in [`examples/requirement.example.yaml`](examples/requirement.example.yaml)
-and the full spec in [`docs/SPEC.md`](docs/SPEC.md).
+Each **group** is fully self-contained (one complete cohort). Leaf conditions are
+of three kinds: **demographic**, **codes** (verbatim codes tied to a `source`
+dataset), and **note** (a criterion with no agreed code yet). See the worked
+output in [`examples/requirement.example.yaml`](examples/requirement.example.yaml)
+and the spec in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Layout
 
 | path | what |
 |---|---|
-| `app.py` | the Streamlit form (to build) |
-| `requirement_schema.py` | single source of truth for the YAML schema (to build) |
-| `docs/SPEC.md` | requirements spec (v2) |
+| `app.py` | the Streamlit form |
+| `requirement_schema.py` | single source of truth: schema, validate, to/from contract |
 | `examples/requirement.example.yaml` | worked, annotated output |
-| `scripts/mockup.py` | static layout mockup (for the screenshot loop) |
+| `docs/SPEC.md` | requirements spec |
 | `scripts/shoot_ui.py` | autonomous screenshot harness (headless render → PNG) |
-| `tests/` | schema/round-trip/coverage + Playwright interaction tests (to build) |
+| `tests/` | schema + Playwright interaction tests |
 | `ui_shots/` | generated screenshots (gitignored) |
 
 ## Run
@@ -46,11 +50,14 @@ and the full spec in [`docs/SPEC.md`](docs/SPEC.md).
 pip install -r requirements.txt
 python -m playwright install chromium        # for screenshots/tests only
 
-streamlit run app.py                          # the app (once built)
-python scripts/shoot_ui.py scripts/mockup.py  # render a page headless → ui_shots/<name>.png
+streamlit run app.py                          # the app
+python -m pytest tests/                        # schema + interaction tests
+python scripts/shoot_ui.py app.py --name shot  # render headless → ui_shots/shot.png
 ```
 
-## Status
+## Use
 
-Spec settled (v2); screenshot dev-loop proven on the mockup. Next: build
-`requirement_schema.py` + `app.py`, iterating via `scripts/shoot_ui.py`.
+Build groups in the form (add conditions / nested INTERSECT-UNION sub-groups /
+ordered exclusions), **👁 Preview YAML**, **⬇ Download YAML**, or **📁 Load** a
+previously-saved `requirement.yaml` back in to edit. **⧉ Clone** a group to start
+a similar cohort from a copy.

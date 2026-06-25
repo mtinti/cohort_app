@@ -31,7 +31,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
   border-radius: 10px !important;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
-/* high-contrast inline code tags  ([codes], [sample] …) */
+/* high-contrast inline code tags  ([codes], [demographic] …) */
 .stMarkdown code {
   background: #e6e9f0 !important;
   color: #1a1c24 !important;
@@ -182,12 +182,6 @@ def summary_html(n):
         if n.get("simd"):
             bits.append(f"SIMD {_esc(n['simd'])}")
         return tag + lbl + (f" — {', '.join(bits)}" if bits else "")
-    if k == "sample":
-        se = n["sample_event"]
-        ev = se["event"]
-        w = f" within {_esc(se['within'])}" if se.get("within") else ""
-        return tag + (f"{lbl} — ≥1 sample {se['direction']} "
-                      f"{ev['occurrence']} {_esc(ev['type'])} index{w}")
     return tag + lbl
 
 
@@ -268,7 +262,7 @@ def leaf_dialog():
     k = work["kind"]
 
     if k == "demographic":
-        work["source"] = st.text_input("Source / catalogue", work.get("source", "SHARE_Demography"))
+        work["source"] = st.text_input("Source / dataset", work.get("source", "Demographics"))
         c = st.columns(2)
         work["age_min"] = _int(c[0].text_input("Age min", _s(work.get("age_min"))))
         work["age_max"] = _int(c[1].text_input("Age max", _s(work.get("age_max"))))
@@ -276,8 +270,8 @@ def leaf_dialog():
         work["residence"] = st.text_input("Residence", work.get("residence", ""))
         work["simd"] = st.text_input("SIMD", work.get("simd", ""))
     elif k == "codes":
-        work["source"] = st.text_input("Source / catalogue", work.get("source", ""),
-                                       placeholder="e.g. SMR01, GP, PIS")
+        work["source"] = st.text_input("Source / dataset", work.get("source", ""),
+                                       placeholder="e.g. hospital, primary_care, prescriptions")
         c = st.columns(2)
         work["icd"] = _lines(c[0].text_area("ICD-10", _join(work.get("icd")), height=90))
         work["read"] = _lines(c[1].text_area("READ", _join(work.get("read")), height=90))
@@ -285,20 +279,6 @@ def leaf_dialog():
         work["bnf"] = _lines(c2[0].text_area("BNF", _join(work.get("bnf")), height=90))
         work["drug_names"] = _lines(c2[1].text_area("Drug names", _join(work.get("drug_names")), height=90))
         st.caption("one code/range per line · e.g. E11, F00-09, C00-D48, 6.1-6.6")
-    elif k == "sample":
-        st.caption("ⓘ Counts PEOPLE who have ≥1 sample positioned vs the event. The sample is not selected.")
-        se = work["sample_event"]
-        ev = se["event"]
-        ev["type"] = st.selectbox("Event type", S.EVENT_TYPES, index=S.EVENT_TYPES.index(ev["type"]))
-        st.caption(f"codes vocabulary for this event: **{S.EVENT_VOCAB[ev['type']]}**")
-        ev["occurrence"] = st.radio("Occurrence (defines the index date)", S.OCCURRENCE,
-                                    index=S.OCCURRENCE.index(ev["occurrence"]), horizontal=True)
-        ev["label"] = st.text_input("Event label", ev.get("label", ""))
-        ev["codes"] = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=80))
-        se["direction"] = st.radio("Sample is", S.DIRECTION,
-                                   index=S.DIRECTION.index(se["direction"]), horizontal=True)
-        se["within"] = st.text_input("Within window (blank = any time in that direction)",
-                                     se.get("within", ""), placeholder="e.g. 6 months")
     elif k == "note":
         work["text"] = st.text_area("Text", work.get("text", ""), height=90)
 
@@ -371,14 +351,15 @@ def sidebar():
         st.title("Cohort Requirement Builder")
         st.subheader("Project")
         req["project"] = st.text_input("Title", req["project"])
+        pt = req["project_type"] if req["project_type"] in S.PROJECT_TYPES else S.PROJECT_TYPES[0]
         req["project_type"] = st.radio("Type", S.PROJECT_TYPES,
-                                       index=S.PROJECT_TYPES.index(req["project_type"]), horizontal=True)
+                                       index=S.PROJECT_TYPES.index(pt), horizontal=True)
         req["target_n"] = st.text_input("Target N", req["target_n"])
         req["ticket"] = st.text_input("Ticket (optional)", req.get("ticket", ""))
 
         st.divider()
         st.subheader("Groups")
-        st.caption("each group = one complete RDMP build")
+        st.caption("each group is a complete, self-contained cohort definition")
         names = [g["name"] or f"Group {i+1}" for i, g in enumerate(req["cohorts"])]
         st.session_state.sel = st.radio("group", range(len(names)),
                                         format_func=lambda i: names[i],
@@ -435,8 +416,8 @@ def main():
 
     st.markdown("### Group name")
     g["name"] = st.text_input("Group name", g["name"], label_visibility="collapsed")
-    st.caption("ⓘ This group defines one complete RDMP build "
-               "(inclusion container, then exclusions subtracted in order).")
+    st.caption("ⓘ This group is one complete cohort: an inclusion set, "
+               "then exclusions removed in order.")
 
     with st.container(border=True):
         st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
@@ -461,7 +442,7 @@ def main():
     if errs:
         st.error("Not ready:\n\n" + "\n".join(f"- {e}" for e in errs))
     else:
-        st.success(f"✓ ready — {len(req['cohorts'])} group(s), each a valid build")
+        st.success(f"✓ ready — {len(req['cohorts'])} cohort group(s)")
 
     if st.session_state.modal:
         mode = st.session_state.modal["mode"]

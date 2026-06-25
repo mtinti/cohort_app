@@ -32,15 +32,6 @@ def test_validate_codes_without_codes():
     assert any("has no codes" in e for e in S.validate(req))
 
 
-def test_validate_sample_only_for_biobank():
-    req = S.new_requirement()
-    req["project"] = "x"
-    req["project_type"] = "recruitment"
-    req["cohorts"][0]["inclusion"]["members"].append(
-        S.new_sample("s", codes=["2BBP."]))
-    assert any("only valid for biobank" in e for e in S.validate(req))
-
-
 def test_validate_age_order():
     req = S.new_requirement()
     req["project"] = "x"
@@ -56,8 +47,8 @@ def test_every_kind_constructs_and_exports():
         assert cleaned["kind"] == k
 
 
-def test_event_vocab_covers_all_event_types():
-    assert set(S.EVENT_VOCAB) == set(S.EVENT_TYPES)
+def test_no_sample_kind():
+    assert "sample" not in S.KINDS and not hasattr(S, "new_sample")
 
 
 def test_from_contract_roundtrip():

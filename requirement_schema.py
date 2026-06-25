@@ -11,24 +11,13 @@ never drift. Holds:
 Design (see docs/SPEC.md): each GROUP is self-contained = one RDMP build.
 inclusion is a CONTAINER (AND=INTERSECT / OR=UNION) built first; exclusions are
 an ORDERED list subtracted in turn (root EXCEPT). Leaves are cohort sets of one
-of four kinds: demographic / codes / sample / note.
+of three kinds: demographic / codes / note.
 """
 import uuid
 
-PROJECT_TYPES = ["recruitment", "biobank"]
+PROJECT_TYPES = ["recruitment", "registry", "other"]
 OPS = ["AND", "OR"]
-KINDS = ["demographic", "codes", "sample", "note"]
-EVENT_TYPES = ["hospitalisation", "medicine", "gp_data", "lab_result"]
-# which code vocabulary the form shows for each event type
-EVENT_VOCAB = {
-    "hospitalisation": "ICD-10",
-    "medicine": "BNF",
-    "gp_data": "READ",
-    "lab_result": "free text",
-}
-OCCURRENCE = ["first", "last"]
-DIRECTION = ["before", "after"]
-WITHIN_UNITS = ["days", "weeks", "months", "years"]
+KINDS = ["demographic", "codes", "note"]
 SCHEMA_VERSION = 1
 
 
@@ -44,7 +33,7 @@ def new_container(op="AND", label="", members=None):
             "members": members if members is not None else []}
 
 
-def new_demographic(label="", source="SHARE_Demography", age_min=None, age_max=None,
+def new_demographic(label="", source="Demographics", age_min=None, age_max=None,
                     sex="both", residence="", simd=""):
     return {"_id": _id(), "node": "leaf", "kind": "demographic", "label": label,
             "source": source, "age_min": age_min, "age_max": age_max,
@@ -56,22 +45,13 @@ def new_codes(label="", source="", icd=None, read=None, bnf=None, drug_names=Non
             "icd": icd or [], "read": read or [], "bnf": bnf or [], "drug_names": drug_names or []}
 
 
-def new_sample(label="", event_type="gp_data", occurrence="first", event_label="",
-               codes=None, direction="before", within=""):
-    return {"_id": _id(), "node": "leaf", "kind": "sample", "label": label,
-            "sample_event": {
-                "event": {"type": event_type, "occurrence": occurrence,
-                          "label": event_label, "codes": codes or []},
-                "direction": direction, "within": within}}
-
-
 def new_note(label="", text=""):
     return {"_id": _id(), "node": "leaf", "kind": "note", "label": label, "text": text}
 
 
 def new_leaf(kind, label=""):
     return {"demographic": new_demographic, "codes": new_codes,
-            "sample": new_sample, "note": new_note}[kind](label=label)
+            "note": new_note}[kind](label=label)
 
 
 def new_group(name="New group"):
@@ -99,7 +79,7 @@ def clone_group(g):
 
 
 def new_requirement():
-    return {"project": "", "project_type": "biobank", "target_n": "", "ticket": "",
+    return {"project": "", "project_type": "recruitment", "target_n": "", "ticket": "",
             "schema_version": SCHEMA_VERSION, "cohorts": [new_group("Group 1")]}
 
 
@@ -132,16 +112,6 @@ def _clean(n):
         for f in ("icd", "read", "bnf", "drug_names"):
             if n.get(f):
                 out[f] = list(n[f])
-    elif k == "sample":
-        ev = n["sample_event"]["event"]
-        event = {"type": ev["type"], "occurrence": ev["occurrence"]}
-        if ev.get("label"):
-            event["label"] = ev["label"]
-        event["codes"] = list(ev.get("codes", []))
-        se = {"event": event, "direction": n["sample_event"]["direction"]}
-        if n["sample_event"].get("within"):
-            se["within"] = n["sample_event"]["within"]
-        out["sample_event"] = se
     elif k == "note":
         out["text"] = n.get("text", "")
     return out
@@ -156,28 +126,25 @@ def _build_member(d):
                              [_build_member(m) for m in d.get("members", [])])
     k = d.get("kind")
     if k == "demographic":
-        return new_demographic(d.get("label", ""), d.get("source", "SHARE_Demography"),
+        return new_demographic(d.get("label", ""), d.get("source", "Demographics"),
                                d.get("age_min"), d.get("age_max"), d.get("sex", "both"),
                                d.get("residence", ""), d.get("simd", ""))
     if k == "codes":
         return new_codes(d.get("label", ""), d.get("source", ""), d.get("icd"),
                          d.get("read"), d.get("bnf"), d.get("drug_names"))
-    if k == "sample":
-        se = d.get("sample_event", {}) or {}
-        ev = se.get("event", {}) or {}
-        return new_sample(d.get("label", ""), ev.get("type", "gp_data"),
-                          ev.get("occurrence", "first"), ev.get("label", ""),
-                          ev.get("codes"), se.get("direction", "before"), se.get("within", ""))
     if k == "note":
         return new_note(d.get("label", ""), d.get("text", ""))
-    return new_note(d.get("label", "(unknown)"), str(d))   # tolerate unknown kinds
+    return new_note(d.get("label", "(unknown)"), str(d))   # tolerate unknown/legacy kinds
 
 
 def from_contract(data):
     """Load a requirement YAML/dict back into an editable UI tree."""
     data = data or {}
+    pt = data.get("project_type", "recruitment")
+    if pt not in PROJECT_TYPES:               # tolerate legacy types (e.g. "biobank")
+        pt = "other"
     req = {"project": data.get("project", ""),
-           "project_type": data.get("project_type", "biobank"),
+           "project_type": pt,
            "target_n": data.get("target_n", ""),
            "ticket": data.get("ticket", ""),
            "schema_version": data.get("schema_version", SCHEMA_VERSION),
@@ -230,16 +197,6 @@ def _validate_node(n, gname, project_type, errs):
         a, b = n.get("age_min"), n.get("age_max")
         if a is not None and b is not None and a > b:
             errs.append(f"{gname}: '{lbl}' has age_min > age_max.")
-    elif k == "sample":
-        if project_type != "biobank":
-            errs.append(f"{gname}: sample conditions are only valid for biobank projects.")
-        ev = n.get("sample_event", {}).get("event", {})
-        if ev.get("type") not in EVENT_TYPES:
-            errs.append(f"{gname}: '{lbl}' has an invalid event type.")
-        if ev.get("type") != "lab_result" and not ev.get("codes"):
-            errs.append(f"{gname}: '{lbl}' event needs at least one code.")
-        if n.get("sample_event", {}).get("direction") not in DIRECTION:
-            errs.append(f"{gname}: '{lbl}' direction must be before or after.")
     elif k == "note":
         if not n.get("text", "").strip():
             errs.append(f"{gname}: note '{lbl}' has no text.")
@@ -250,7 +207,7 @@ def validate(req):
     if not req.get("project", "").strip():
         errs.append("Project title is required.")
     if req.get("project_type") not in PROJECT_TYPES:
-        errs.append("Project type must be recruitment or biobank.")
+        errs.append("Project type must be one of: " + ", ".join(PROJECT_TYPES) + ".")
     if not req.get("cohorts"):
         errs.append("Add at least one group.")
     ptype = req.get("project_type")
@@ -270,42 +227,37 @@ def validate(req):
 
 # ---------------------------------------------------------------------------
 # Worked example — deliberately GENERIC / illustrative (placeholder codes and
-# labels), so it does not resemble any real research request. It only shows the
-# STRUCTURE: two self-contained groups, AND/OR nesting, a sample-event rule,
-# and ordered exclusions.
+# labels). It only shows the STRUCTURE: two self-contained groups, AND/OR
+# nesting, code conditions across sources, and ordered exclusions.
 # ---------------------------------------------------------------------------
 def _condition_union():
     return new_container("OR", "Condition of interest (any source)", [
-        new_codes("Condition in hospital data", "SMR01", icd=["A00"]),
-        new_codes("Condition in GP data", "GP", read=["X1111"]),
+        new_codes("Condition in hospital data", "hospital", icd=["A00"]),
+        new_codes("Condition in primary care", "primary_care", read=["X1111"]),
     ])
 
 
 def _adults():
-    return new_demographic("Adults resident in Scotland", "SHARE_Demography",
-                           age_min=18, age_max=80, sex="both", residence="Scotland", simd="any")
+    return new_demographic("Adults", "Demographics",
+                           age_min=18, age_max=80, sex="both", residence="", simd="")
 
 
 def build_example():
     req = new_requirement()
     req.update(project="Example cohort request (edit me)",
-               project_type="biobank", target_n="approx. N per group", ticket="")
+               project_type="recruitment", target_n="approx. N per group", ticket="")
 
     a = new_group("Group A — cases")
     a["inclusion"] = new_container("AND", members=[
         _adults(),
         _condition_union(),
         new_container("OR", "A second condition (placeholder)", [
-            new_codes("Second condition (GP READ)", "GP", read=["X2222"]),
-            new_codes("Second condition (hospital ICD)", "SMR01", icd=["A01"]),
+            new_codes("Second condition (primary care)", "primary_care", read=["X2222"]),
+            new_codes("Second condition (hospital)", "hospital", icd=["A01"]),
         ]),
-        new_sample("Has a sample before first diagnosis",
-                   event_type="gp_data", occurrence="first",
-                   event_label="First recorded diagnosis", codes=["X1111"],
-                   direction="before", within="6 months"),
     ])
     a["exclusions"] = [
-        new_codes("Comorbidity to exclude", "SMR01", icd=["B00"]),
+        new_codes("Comorbidity to exclude", "hospital", icd=["B00"]),
         new_note("Other criterion (no code yet)",
                  "Describe any criterion that has no agreed code."),
     ]
@@ -314,14 +266,10 @@ def build_example():
     b["inclusion"] = new_container("AND", members=[
         _adults(),
         _condition_union(),
-        new_sample("Has a sample after first diagnosis",
-                   event_type="gp_data", occurrence="first",
-                   event_label="First recorded diagnosis", codes=["X1111"],
-                   direction="after", within="12 months"),
     ])
     b["exclusions"] = [
-        new_codes("Exclude a condition variant", "GP", read=["X3333"]),
-        new_codes("Comorbidity to exclude", "SMR01", icd=["B00"]),
+        new_codes("Exclude a condition variant", "primary_care", read=["X3333"]),
+        new_codes("Comorbidity to exclude", "hospital", icd=["B00"]),
     ]
 
     req["cohorts"] = [a, b]

@@ -71,7 +71,7 @@ def test_add_exclusion_via_dialog(page):
     settle(page)
     dlg = page.get_by_role("dialog")
     dlg.get_by_role("textbox", name="Label").fill("Test exclusion")
-    dlg.get_by_role("textbox", name="Source / catalogue").fill("TEST_CAT")
+    dlg.get_by_role("textbox", name="Source / dataset").fill("TEST_CAT")
     dlg.get_by_role("textbox", name="ICD-10").fill("Z99")
     page.keyboard.press("Tab")
     settle(page)
