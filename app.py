@@ -409,19 +409,20 @@ def sidebar():
         if st.button("New (blank requirement)", use_container_width=True):
             st.session_state.req = S.new_requirement()
             st.session_state.sel = 0; st.rerun()
-        with st.expander("📁 Load a requirement.yaml"):
-            up = st.file_uploader("YAML file", type=["yaml", "yml"], label_visibility="collapsed")
-            if up is not None:
-                sig = (up.name, up.size)
-                if st.session_state.get("_loaded_sig") != sig:   # load each new file once
-                    try:
-                        data = yaml.safe_load(up.getvalue().decode("utf-8"))
-                        st.session_state.req = S.from_contract(data)
-                        st.session_state.sel = 0
-                        st.session_state._loaded_sig = sig
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Could not load: {e}")
+        st.markdown("**📁 Load a requirement.yaml**")
+        up = st.file_uploader("Drag a .yaml here or browse", type=["yaml", "yml"],
+                              label_visibility="collapsed")
+        if up is not None:
+            sig = (up.name, up.size)
+            if st.session_state.get("_loaded_sig") != sig:       # load each new file once
+                try:
+                    data = yaml.safe_load(up.getvalue().decode("utf-8"))
+                    st.session_state.req = S.from_contract(data)
+                    st.session_state.sel = 0
+                    st.session_state._loaded_sig = sig
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not load: {e}")
 
 
 # ----------------------------- main ----------------------------------------
