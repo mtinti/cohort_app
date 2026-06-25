@@ -43,8 +43,16 @@ input[aria-label="Group name"] {
 }
 /* soft card fill so white rows sit on an off-white box (clearer boundaries) */
 div[data-testid="stVerticalBlockBorderWrapper"] { background: #fafbfd; }
-/* zero the inter-row gap inside the section boxes so connector lines join up */
-div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+/* Make tree rows flush + full-height so connector rails form CONTINUOUS lines:
+   zero gaps/margins, stretch the columns and the label-column wrappers to the
+   row height so the stretching rail borders meet across rows. */
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0 !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: stretch !important; margin: 0 !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] { margin: 0 !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div { display: flex !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div > [data-testid="stVerticalBlock"],
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdown"],
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] { height: 100% !important; width: 100%; }
 /* colour-blind-safe section headers (Okabe-Ito blue vs orange) + icon + text */
 .sec-head { font-size: 1.15rem; font-weight: 700; padding: 8px 12px;
             border-radius: 6px; margin-bottom: 12px; }
@@ -177,26 +185,28 @@ def summary_html(n):
 
 
 # ----------------------------- tree rendering ------------------------------
-# Connector rails are drawn as full-height CSS borders (not per-row glyphs) so,
-# with the inter-row gap zeroed (see CSS), they form CONTINUOUS vertical lines.
-LINE, H, HALF = "#8a93a3", 40, 20
+# Connector rails are drawn as CSS borders that STRETCH to the full row height
+# (percent/absolute top:0;bottom:0), and the inter-row gap+margins are zeroed
+# (see CSS), so they form CONTINUOUS vertical lines regardless of row height.
+LINE, H, EXT = "#8a93a3", 40, 30   # EXT: how far rails over-extend past the row to bridge inter-row gaps
 
 
-def _v():       # vertical line through the full row (ancestor continues below)
-    return (f"<div style='position:relative;width:22px;height:{H}px'>"
-            f"<div style='position:absolute;left:10px;top:0;height:{H}px;border-left:2px solid {LINE}'></div></div>")
+def _v():       # vertical line spanning the row and overlapping into neighbours
+    return (f"<div style='position:relative;width:22px;align-self:stretch'>"
+            f"<div style='position:absolute;left:10px;top:-{EXT}px;bottom:-{EXT}px;border-left:2px solid {LINE}'></div></div>")
 
 
 def _blank():
-    return f"<div style='width:22px;height:{H}px'></div>"
+    return "<div style='width:22px'></div>"
 
 
 def _elbow(is_last):
-    bottom = "" if is_last else (f"<div style='position:absolute;left:10px;top:{HALF}px;"
-                                 f"height:{HALF}px;border-left:2px solid {LINE}'></div>")
-    return (f"<div style='position:relative;width:22px;height:{H}px'>"
-            f"<div style='position:absolute;left:10px;top:0;height:{HALF}px;border-left:2px solid {LINE}'></div>"
-            f"<div style='position:absolute;left:10px;top:{HALF}px;width:12px;border-top:2px solid {LINE}'></div>"
+    # top half over-extends UP to meet the row above; bottom half (if any) DOWN to the next
+    bottom = "" if is_last else (f"<div style='position:absolute;left:10px;top:50%;"
+                                 f"bottom:-{EXT}px;border-left:2px solid {LINE}'></div>")
+    return (f"<div style='position:relative;width:22px;align-self:stretch'>"
+            f"<div style='position:absolute;left:10px;top:-{EXT}px;bottom:50%;border-left:2px solid {LINE}'></div>"
+            f"<div style='position:absolute;left:10px;top:50%;width:12px;border-top:2px solid {LINE}'></div>"
             f"{bottom}</div>")
 
 
@@ -207,8 +217,8 @@ def _rail(flags, is_last):
 def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=False):
     rail = "" if is_root else _rail(flags, is_last)
     cls = "node-c" if n.get("node") == "container" else "node"
-    label = (f"<div style='display:flex;align-items:center;height:{H}px'>{rail}"
-             f"<div class='{cls}'>{summary_html(n)}</div></div>")
+    label = (f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail}"
+             f"<div class='{cls}' style='align-self:center'>{summary_html(n)}</div></div>")
     cols = st.columns([8, 0.7, 0.7, 0.7, 0.7])
     cols[0].markdown(label, unsafe_allow_html=True)
     if cols[1].button("✎", key=f"e{n['_id']}", help="edit"):
