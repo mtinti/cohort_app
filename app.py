@@ -50,6 +50,11 @@ div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlock
             border-radius: 6px; margin-bottom: 12px; }
 .sec-inc { background: #dce9f5; color: #0b3d66; border-left: 7px solid #0072B2; }
 .sec-exc { background: #fbe7d2; color: #6e3500; border-left: 7px solid #D55E00; }
+/* node "boxes" the tree branches connect into */
+.node, .node-c { display: inline-block; height: 28px; line-height: 26px;
+  padding: 0 10px; border: 1px solid #cfd4de; border-radius: 6px;
+  background: #ffffff; color: #14161c; white-space: nowrap; }
+.node-c { background: #eef1f6; border-color: #aeb6c4; }   /* AND/OR containers, tinted */
 /* dialog: clear border + readable, bordered fields */
 div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !important;
                      box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
@@ -201,8 +206,9 @@ def _rail(flags, is_last):
 
 def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=False):
     rail = "" if is_root else _rail(flags, is_last)
+    cls = "node-c" if n.get("node") == "container" else "node"
     label = (f"<div style='display:flex;align-items:center;height:{H}px'>{rail}"
-             f"<div style='padding-left:2px'>{summary_html(n)}</div></div>")
+             f"<div class='{cls}'>{summary_html(n)}</div></div>")
     cols = st.columns([8, 0.7, 0.7, 0.7, 0.7])
     cols[0].markdown(label, unsafe_allow_html=True)
     if cols[1].button("✎", key=f"e{n['_id']}", help="edit"):
