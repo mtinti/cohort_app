@@ -1,0 +1,168 @@
+# ============================================================================
+# SHARE / GoSHARE cohort requirement  —  WORKED EXAMPLE (annotated template)
+#
+# Authored by a researcher in the web tool (no Word form, no LLM extraction).
+# THIS FILE IS THE CONTRACT fed to the cohort builder (Agent 2), which assembles
+# one RDMP CohortIdentificationConfiguration (CIC) PER GROUP.
+#
+# Each GROUP is fully SELF-CONTAINED: it alone defines a complete RDMP build.
+# There is no shared block — a group repeats whatever base criteria it needs.
+#
+# The structure MIRRORS how a CIC is built, so every block has a visible
+# counterpart in the build (the "link" to RDMP) — without being a second RDMP
+# editor (no handles, no SQL, no index-table plumbing; those stay the builder's):
+#
+#   Root container = EXCEPT
+#     child 1  = the INCLUSION container  (the base population, built first)
+#     child 2+ = EXCLUSION sets, each SUBTRACTED in turn, in the order listed
+#                (the researcher decides what is removed first)
+#
+# Vocabulary (kept close to RDMP on purpose):
+#   * container        -> { op: AND | OR, members: [...] }   AND=INTERSECT, OR=UNION
+#   * cohort set (leaf)-> one of four `kind`s:
+#       - kind: demographic  age / sex / residence / SIMD  (SHARE_Demography)
+#       - kind: codes        patients matching codes in ONE data source
+#       - kind: sample       "has >=1 biobank sample positioned in time vs an event"
+#       - kind: note         a criterion with no agreed code yet (free text)
+#   * inclusion        -> the base-population container (built first)
+#   * exclusions       -> an ORDERED list, each progressively removed (root EXCEPT)
+#
+# We count PEOPLE. A `sample` set does NOT pick a sample — it requires that at
+# least one sample exists for the person, before/after the index date.
+# ============================================================================
+
+project: "Lipidomics of Diabetic Retinopathy and Maculopathy"
+project_type: biobank             # recruitment | biobank
+target_n: "15 per group (90 total)"
+ticket: "SHARE-2213"              # optional; used only to name files / tag the YAML
+schema_version: 1
+
+# ---------------------------------------------------------------------------
+# GROUPS — one self-contained block per cohort = one full RDMP build.
+# The tool builds one group at a time; add as many as needed.
+#
+# Per group the builder assembles ONE CIC:
+#   Root (EXCEPT)
+#     ├─ Inclusion container  ( = this group's `inclusion` )
+#     └─ this group's `exclusions`, subtracted in the order listed
+# ---------------------------------------------------------------------------
+cohorts:
+
+  # ===== GROUP A ============================================================
+  - name: "Group 3 — T2DM with severe preproliferative DR, sampled before diagnosis"
+
+    inclusion:                    # base-population container (INTERSECT)
+      op: AND
+      members:
+        - kind: demographic
+          label: "Adults resident in Scotland"
+          source: SHARE_Demography
+          age_min: 18
+          age_max: 80
+          sex: both
+          residence: "Scotland"
+          simd: "any"
+
+        # Type 2 diabetes, coded in EITHER hospital OR GP data -> UNION sub-container.
+        - op: OR
+          label: "Type 2 diabetes mellitus (any source)"
+          members:
+            - kind: codes
+              label: "T2DM in hospital admissions"
+              source: SMR01
+              icd: ["E11"]
+            - kind: codes
+              label: "T2DM in GP records"
+              source: GP
+              read: ["C10E.", "C1087"]
+
+        # Severe preproliferative DR, coded in EITHER GP OR hospital data.
+        - op: OR
+          label: "Severe preproliferative diabetic retinopathy"
+          members:
+            - kind: codes
+              label: "Severe preprolif DR (GP READ)"
+              source: GP
+              read: ["F4207", "F4208", "2BBr.", "2BBo."]
+            - kind: codes
+              label: "Diabetic retinopathy (hospital ICD)"
+              source: SMR01
+              icd: ["E11.3", "E13.3", "E14.3"]
+
+        # Temporal / sample-membership set: include the PERSON if they have
+        # >=1 biobank sample taken BEFORE the FIRST GP diagnosis of DR (<=6 mo).
+        - kind: sample
+          label: "Has a biobank sample before first DR diagnosis"
+          sample_event:
+            event:
+              type: gp_data       # hospitalisation | medicine | lab_result | gp_data
+              occurrence: first   # first (default) | last
+              label: "First GP diagnosis of diabetic retinopathy"
+              codes: ["2BBP.", "2BBQ."]   # vocabulary follows event.type (READ here)
+            direction: before     # before | after
+            within: "6 months"   # optional; omit => any time before the index date
+
+    exclusions:                   # subtracted from the population, in THIS order
+      - kind: codes
+        label: "Inherited lipid metabolism disorders"
+        source: SMR01
+        icd: ["E78", "E74", "E75"]
+      - kind: note
+        label: "Prior intravitreal therapy for DMO"
+        text: "Exclude prior anti-VEGF / steroid intravitreal therapy (no agreed code yet)"
+
+  # ===== GROUP B (self-contained: repeats its own base) =====================
+  - name: "Control — T2DM, no diabetic retinopathy, sampled after diagnosis"
+
+    inclusion:
+      op: AND
+      members:
+        - kind: demographic
+          label: "Adults resident in Scotland"
+          source: SHARE_Demography
+          age_min: 18
+          age_max: 80
+          sex: both
+          residence: "Scotland"
+          simd: "any"
+
+        - op: OR
+          label: "Type 2 diabetes mellitus (any source)"
+          members:
+            - kind: codes
+              label: "T2DM in hospital admissions"
+              source: SMR01
+              icd: ["E11"]
+            - kind: codes
+              label: "T2DM in GP records"
+              source: GP
+              read: ["C10E.", "C1087"]
+
+        - kind: sample
+          label: "Has a biobank sample after first T2DM diagnosis"
+          sample_event:
+            event:
+              type: gp_data
+              occurrence: first
+              label: "First GP diagnosis of Type 2 diabetes"
+              codes: ["C10E.", "C1087"]
+            direction: after
+            within: "12 months"
+
+    exclusions:                   # remove anyone WITH retinopathy first, then lipid disorders
+      - kind: codes
+        label: "Any diabetic retinopathy (exclude)"
+        source: GP
+        read: ["2BBP.", "2BBQ.", "2BBr.", "2BBo.", "F4207", "F4208"]
+      - kind: codes
+        label: "Inherited lipid metabolism disorders"
+        source: SMR01
+        icd: ["E78", "E74", "E75"]
+
+# ---------------------------------------------------------------------------
+# Per-event-type code vocabulary (what the form shows inside a `sample_event`):
+#   hospitalisation -> ICD-10   (SMR admissions)
+#   medicine        -> BNF      (PIS prescribing; optional drug names)
+#   gp_data         -> READ     (GP records)
+#   lab_result      -> FREE TEXT for now (to be tightened later)
+# ---------------------------------------------------------------------------

@@ -1,0 +1,5 @@
+streamlit>=1.58
+pyyaml>=6
+# dev / test only:
+playwright>=1.40
+pytest>=8
