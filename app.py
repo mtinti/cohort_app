@@ -215,35 +215,36 @@ def _rail(flags, is_last):
 
 
 def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=False):
+    is_c = n.get("node") == "container"
     rail = "" if is_root else _rail(flags, is_last)
-    cls = "node-c" if n.get("node") == "container" else "node"
+    cls = "node-c" if is_c else "node"
     label = (f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail}"
              f"<div class='{cls}' style='align-self:center'>{summary_html(n)}</div></div>")
-    cols = st.columns([8, 0.7, 0.7, 0.7, 0.7])
+    cols = st.columns([8, 0.6, 0.6, 0.6, 0.6, 0.6])
     cols[0].markdown(label, unsafe_allow_html=True)
-    if cols[1].button("✎", key=f"e{n['_id']}", help="edit"):
-        open_modal("edit_container" if n.get("node") == "container" else "edit_leaf", n, id=n["_id"])
-    if not is_root and cols[2].button("✕", key=f"x{n['_id']}", help="remove"):
+    # ➕ lives on the CONTAINER's own row, so it is unambiguous which group you add into
+    if is_c and cols[1].button("➕", key=f"a{n['_id']}", help="add a condition or sub-group into THIS group"):
+        open_modal("add_to", {}, container=n["_id"])
+    if cols[2].button("✎", key=f"e{n['_id']}", help="edit"):
+        open_modal("edit_container" if is_c else "edit_leaf", n, id=n["_id"])
+    if not is_root and cols[3].button("✕", key=f"x{n['_id']}", help="remove"):
         remove_node(g, n["_id"]); st.rerun()
     if is_excl and top:
-        if cols[3].button("↑", key=f"u{n['_id']}") and idx > 0:
+        if cols[4].button("↑", key=f"u{n['_id']}") and idx > 0:
             sib[idx - 1], sib[idx] = sib[idx], sib[idx - 1]; st.rerun()
-        if cols[4].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
+        if cols[5].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
             sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
 
-    if n.get("node") == "container":
+    if is_c:
         child_flags = [] if is_root else flags + [not is_last]
         m = n["members"]
+        if not m:        # visible placeholder so an empty group isn't invisible
+            rail2 = _rail(child_flags, True)
+            st.markdown(f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail2}"
+                        f"<div style='align-self:center;color:#8a8f9c;font-style:italic'>"
+                        f"empty group — use ➕ on the row above to add</div></div>", unsafe_allow_html=True)
         for j, ch in enumerate(m):
             render_member(g, ch, child_flags, j == len(m) - 1, is_excl, m, j)
-        # add-row, indented to roughly the children's level
-        pad = (len(child_flags) + 1) * 22
-        a = st.columns([1.6, 2.1, 2.4, 3.9])
-        a[0].markdown(f"<div style='height:{H}px;width:{pad}px'></div>", unsafe_allow_html=True)
-        if a[1].button("➕ condition", key=f"ac{n['_id']}"):
-            open_modal("add_leaf", S.new_codes(), container=n["_id"])
-        if a[2].button("➕ AND/OR group", key=f"ag{n['_id']}"):
-            n["members"].append(S.new_container("AND")); st.rerun()
 
 
 # ----------------------------- dialogs -------------------------------------
@@ -306,6 +307,23 @@ def leaf_dialog():
             find_node(g, m["container"])["members"].append(work)
         close_modal(); st.rerun()
     if b[1].button("Cancel", use_container_width=True):
+        close_modal(); st.rerun()
+
+
+@st.dialog("Add to group")
+def add_dialog():
+    m = st.session_state.modal
+    cont = find_node(group(), m["container"])
+    st.markdown("Add into &nbsp; " + (summary_html(cont) if cont else "?"), unsafe_allow_html=True)
+    st.write("")
+    c = st.columns(2)
+    if c[0].button("➕ Condition", type="primary", use_container_width=True):
+        st.session_state.modal = {"mode": "add_leaf", "container": m["container"]}
+        st.session_state.work = S.new_codes()
+        st.rerun()
+    if c[1].button("➕ AND/OR sub-group", use_container_width=True):
+        cont["members"].append(S.new_container("AND")); close_modal(); st.rerun()
+    if st.button("Cancel", use_container_width=True):
         close_modal(); st.rerun()
 
 
@@ -409,7 +427,12 @@ def main():
 
     if st.session_state.modal:
         mode = st.session_state.modal["mode"]
-        (container_dialog if mode == "edit_container" else leaf_dialog)()
+        if mode == "edit_container":
+            container_dialog()
+        elif mode == "add_to":
+            add_dialog()
+        else:
+            leaf_dialog()
 
 
 main()
