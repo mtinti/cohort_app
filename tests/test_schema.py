@@ -60,6 +60,17 @@ def test_event_vocab_covers_all_event_types():
     assert set(S.EVENT_VOCAB) == set(S.EVENT_TYPES)
 
 
+def test_from_contract_roundtrip():
+    ex = S.build_example()
+    rebuilt = S.from_contract(S.to_contract(ex))
+    assert S.to_contract(rebuilt) == S.to_contract(ex)     # load->export equals original export
+
+
+def test_from_contract_tolerates_empty():
+    req = S.from_contract({})
+    assert req["cohorts"] and S.validate(req)               # has a default group, but invalid (blank)
+
+
 def test_clone_group_fresh_ids_same_content():
     g = S.build_example()["cohorts"][0]
     clone = S.clone_group(g)

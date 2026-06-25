@@ -147,6 +147,54 @@ def _clean(n):
     return out
 
 
+def _build_member(d):
+    """Inverse of _clean: a contract dict -> a UI node (with fresh _ids)."""
+    if not isinstance(d, dict):
+        return new_note("(unparseable)", str(d))
+    if "op" in d or "members" in d:                       # container
+        return new_container(d.get("op", "AND"), d.get("label", ""),
+                             [_build_member(m) for m in d.get("members", [])])
+    k = d.get("kind")
+    if k == "demographic":
+        return new_demographic(d.get("label", ""), d.get("source", "SHARE_Demography"),
+                               d.get("age_min"), d.get("age_max"), d.get("sex", "both"),
+                               d.get("residence", ""), d.get("simd", ""))
+    if k == "codes":
+        return new_codes(d.get("label", ""), d.get("source", ""), d.get("icd"),
+                         d.get("read"), d.get("bnf"), d.get("drug_names"))
+    if k == "sample":
+        se = d.get("sample_event", {}) or {}
+        ev = se.get("event", {}) or {}
+        return new_sample(d.get("label", ""), ev.get("type", "gp_data"),
+                          ev.get("occurrence", "first"), ev.get("label", ""),
+                          ev.get("codes"), se.get("direction", "before"), se.get("within", ""))
+    if k == "note":
+        return new_note(d.get("label", ""), d.get("text", ""))
+    return new_note(d.get("label", "(unknown)"), str(d))   # tolerate unknown kinds
+
+
+def from_contract(data):
+    """Load a requirement YAML/dict back into an editable UI tree."""
+    data = data or {}
+    req = {"project": data.get("project", ""),
+           "project_type": data.get("project_type", "biobank"),
+           "target_n": data.get("target_n", ""),
+           "ticket": data.get("ticket", ""),
+           "schema_version": data.get("schema_version", SCHEMA_VERSION),
+           "cohorts": []}
+    for gd in data.get("cohorts", []) or []:
+        inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []})
+        if inc.get("node") != "container":               # inclusion must be a container
+            inc = new_container("AND", members=[inc])
+        req["cohorts"].append({
+            "_id": _id(), "name": gd.get("name", ""),
+            "inclusion": inc,
+            "exclusions": [_build_member(m) for m in (gd.get("exclusions") or [])]})
+    if not req["cohorts"]:
+        req["cohorts"] = [new_group("Group 1")]
+    return req
+
+
 def to_contract(req):
     out = {"project": req.get("project", ""),
            "project_type": req.get("project_type", ""),

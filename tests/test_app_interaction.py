@@ -104,6 +104,23 @@ def test_reorder_exclusion(page):
         before[1].get("label"), before[0].get("label")]
 
 
+def test_load_yaml_populates_form(page, tmp_path):
+    f = tmp_path / "loaded.requirement.yaml"
+    f.write_text(
+        "project: Loaded Project\nproject_type: recruitment\ntarget_n: '42'\n"
+        "schema_version: 1\ncohorts:\n  - name: Loaded Group\n    inclusion:\n"
+        "      op: AND\n      members:\n        - kind: codes\n          label: x\n"
+        "          source: GP\n          read: [A1]\n    exclusions: []\n")
+    page.get_by_text("Load a requirement.yaml").click()      # open the expander
+    settle(page)
+    page.locator("input[type='file']").set_input_files(str(f))
+    settle(page)
+    assert page.get_by_role("textbox", name="Title").input_value() == "Loaded Project"
+    got = download_yaml(page)
+    assert got["project"] == "Loaded Project"
+    assert got["cohorts"][0]["name"] == "Loaded Group"
+
+
 def test_blank_requirement_shows_validation(page):
     page.get_by_role("button", name="New (blank requirement)").click()
     settle(page)
