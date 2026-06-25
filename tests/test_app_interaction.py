@@ -59,7 +59,7 @@ def test_add_subgroup_via_container_button(page):
     before = len(download_yaml(page)["cohorts"][0]["inclusion"]["members"])
     page.get_by_role("button", name="➕", exact=True).first.click()   # root inclusion container
     settle(page)
-    page.get_by_role("dialog").get_by_role("button", name=re.compile("sub-group")).click()
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("INTERSECT")).click()
     settle(page)
     after = len(download_yaml(page)["cohorts"][0]["inclusion"]["members"])
     assert after == before + 1

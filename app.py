@@ -16,6 +16,10 @@ import requirement_schema as S
 
 st.set_page_config(page_title="Cohort Requirement Builder", layout="wide")
 NBSP = "&nbsp;&nbsp;&nbsp;&nbsp;"
+# Display names for the set operators (stored op stays AND/OR in the YAML contract)
+OP_LABEL = {"AND": "INTERSECT", "OR": "UNION"}
+OP_MEAN = {"AND": "all of · AND", "OR": "any of · OR"}
+OP_FULL = {"AND": "INTERSECT — all of (AND)", "OR": "UNION — any of (OR)"}
 
 CSS = """
 <style>
@@ -158,7 +162,10 @@ def _esc(s):
 
 def summary_html(n):
     if n.get("node") == "container":
-        return f"<b>{n['op']}</b>" + (f" · {_esc(n['label'])}" if n.get("label") else " group")
+        op = n["op"]
+        head = (f"<b>{OP_LABEL[op]}</b> <span style='color:#5b6270;font-weight:400;font-size:0.88em'>"
+                f"({OP_MEAN[op]})</span>")
+        return head + (f" · {_esc(n['label'])}" if n.get("label") else "")
     k = n["kind"]
     lbl = _esc(n.get("label") or k)
     tag = f"<code>[{k}]</code> "
@@ -329,13 +336,16 @@ def add_dialog():
     cont = find_node(group(), m["container"])
     st.markdown("Add into &nbsp; " + (summary_html(cont) if cont else "?"), unsafe_allow_html=True)
     st.write("")
-    c = st.columns(2)
-    if c[0].button("➕ Condition", type="primary", use_container_width=True):
+    if st.button("➕ Condition", type="primary", use_container_width=True):
         st.session_state.modal = {"mode": "add_leaf", "container": m["container"]}
         st.session_state.work = S.new_codes()
         st.rerun()
-    if c[1].button("➕ AND/OR sub-group", use_container_width=True):
+    st.caption("…or a sub-group that combines its items with:")
+    c = st.columns(2)
+    if c[0].button(f"➕ {OP_FULL['AND']}", use_container_width=True):
         cont["members"].append(S.new_container("AND")); close_modal(); st.rerun()
+    if c[1].button(f"➕ {OP_FULL['OR']}", use_container_width=True):
+        cont["members"].append(S.new_container("OR")); close_modal(); st.rerun()
     if st.button("Cancel", use_container_width=True):
         close_modal(); st.rerun()
 
@@ -343,8 +353,9 @@ def add_dialog():
 @st.dialog("Group (container)")
 def container_dialog():
     work = st.session_state.work
-    work["op"] = st.radio("Operator", S.OPS, index=S.OPS.index(work["op"]),
-                          horizontal=True, help="AND = INTERSECT · OR = UNION")
+    work["op"] = st.radio("How are the items in this group combined?", S.OPS,
+                          index=S.OPS.index(work["op"]),
+                          format_func=lambda o: OP_FULL[o])
     work["label"] = st.text_input("Label (optional)", work.get("label", ""))
     b = st.columns(2)
     if b[0].button("Save", type="primary", use_container_width=True):
