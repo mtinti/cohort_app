@@ -1,0 +1,4 @@
+[theme]
+# Okabe-Ito blue — colour-blind-safe primary (replaces the default red used for
+# buttons/focus, which is hard for red-green colour blindness).
+primaryColor = "#0072B2"

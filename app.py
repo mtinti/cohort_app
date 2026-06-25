@@ -43,11 +43,13 @@ input[aria-label="Group name"] {
 }
 /* soft card fill so white rows sit on an off-white box (clearer boundaries) */
 div[data-testid="stVerticalBlockBorderWrapper"] { background: #fafbfd; }
-/* coloured section headers: keep (green) vs remove (red) */
+/* zero the inter-row gap inside the section boxes so connector lines join up */
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+/* colour-blind-safe section headers (Okabe-Ito blue vs orange) + icon + text */
 .sec-head { font-size: 1.15rem; font-weight: 700; padding: 8px 12px;
             border-radius: 6px; margin-bottom: 12px; }
-.sec-inc { background: #e6f4ea; color: #0f5132; border-left: 7px solid #2e8b57; }
-.sec-exc { background: #fdeaea; color: #842029; border-left: 7px solid #c0392b; }
+.sec-inc { background: #dce9f5; color: #0b3d66; border-left: 7px solid #0072B2; }
+.sec-exc { background: #fbe7d2; color: #6e3500; border-left: 7px solid #D55E00; }
 /* dialog: clear border + readable, bordered fields */
 div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !important;
                      box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
@@ -136,50 +138,73 @@ def _join(lst):
     return "\n".join(lst or [])
 
 
-# ----------------------------- summaries -----------------------------------
-def summary(n):
+# ----------------------------- summaries (HTML) ----------------------------
+def _esc(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def summary_html(n):
     if n.get("node") == "container":
-        return f"**{n['op']}**" + (f" · {n['label']}" if n.get("label") else " group")
+        return f"<b>{n['op']}</b>" + (f" · {_esc(n['label'])}" if n.get("label") else " group")
     k = n["kind"]
-    lbl = n.get("label") or k
+    lbl = _esc(n.get("label") or k)
+    tag = f"<code>[{k}]</code> "
     if k == "codes":
-        vocs = [f"{f.upper().replace('_', ' ')} {', '.join(n[f])}"
+        vocs = [f"{f.upper().replace('_', ' ')} {_esc(', '.join(n[f]))}"
                 for f in ("icd", "read", "bnf", "drug_names") if n.get(f)]
-        return f"`[codes]` {lbl} — {n.get('source', '?')} · " + " · ".join(vocs)
+        return tag + f"{lbl} — {_esc(n.get('source', '?'))} · " + " · ".join(vocs)
     if k == "demographic":
         bits = []
         if n.get("age_min") is not None or n.get("age_max") is not None:
             bits.append(f"age {_s(n.get('age_min'))}–{_s(n.get('age_max'))}")
         if n.get("residence"):
-            bits.append(n["residence"])
+            bits.append(_esc(n["residence"]))
         if n.get("simd"):
-            bits.append(f"SIMD {n['simd']}")
-        return f"`[demographic]` {lbl}" + (f" — {', '.join(bits)}" if bits else "")
+            bits.append(f"SIMD {_esc(n['simd'])}")
+        return tag + lbl + (f" — {', '.join(bits)}" if bits else "")
     if k == "sample":
         se = n["sample_event"]
         ev = se["event"]
-        w = f" within {se['within']}" if se.get("within") else ""
-        return (f"`[sample]` {lbl} — ≥1 sample {se['direction']} "
-                f"{ev['occurrence']} {ev['type']} index{w}")
-    return f"`[note]` {lbl}"
+        w = f" within {_esc(se['within'])}" if se.get("within") else ""
+        return tag + (f"{lbl} — ≥1 sample {se['direction']} "
+                      f"{ev['occurrence']} {_esc(ev['type'])} index{w}")
+    return tag + lbl
 
 
 # ----------------------------- tree rendering ------------------------------
-GUIDE = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#9aa0b3;white-space:pre"
+# Connector rails are drawn as full-height CSS borders (not per-row glyphs) so,
+# with the inter-row gap zeroed (see CSS), they form CONTINUOUS vertical lines.
+LINE, H, HALF = "#8a93a3", 40, 20
 
 
-def _g(s):
-    return f"<span style='{GUIDE}'>{s}</span>" if s else ""
+def _v():       # vertical line through the full row (ancestor continues below)
+    return (f"<div style='position:relative;width:22px;height:{H}px'>"
+            f"<div style='position:absolute;left:10px;top:0;height:{H}px;border-left:2px solid {LINE}'></div></div>")
 
 
-def render_member(g, n, guide, is_last, is_excl, sib, idx, is_root=False, top=False):
-    if is_root:
-        branch, child = "", ""
-    else:
-        branch = guide + ("└── " if is_last else "├── ")
-        child = guide + ("     " if is_last else "│    ")
+def _blank():
+    return f"<div style='width:22px;height:{H}px'></div>"
+
+
+def _elbow(is_last):
+    bottom = "" if is_last else (f"<div style='position:absolute;left:10px;top:{HALF}px;"
+                                 f"height:{HALF}px;border-left:2px solid {LINE}'></div>")
+    return (f"<div style='position:relative;width:22px;height:{H}px'>"
+            f"<div style='position:absolute;left:10px;top:0;height:{HALF}px;border-left:2px solid {LINE}'></div>"
+            f"<div style='position:absolute;left:10px;top:{HALF}px;width:12px;border-top:2px solid {LINE}'></div>"
+            f"{bottom}</div>")
+
+
+def _rail(flags, is_last):
+    return "".join(_v() if f else _blank() for f in flags) + _elbow(is_last)
+
+
+def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=False):
+    rail = "" if is_root else _rail(flags, is_last)
+    label = (f"<div style='display:flex;align-items:center;height:{H}px'>{rail}"
+             f"<div style='padding-left:2px'>{summary_html(n)}</div></div>")
     cols = st.columns([8, 0.7, 0.7, 0.7, 0.7])
-    cols[0].markdown(_g(branch) + summary(n), unsafe_allow_html=True)
+    cols[0].markdown(label, unsafe_allow_html=True)
     if cols[1].button("✎", key=f"e{n['_id']}", help="edit"):
         open_modal("edit_container" if n.get("node") == "container" else "edit_leaf", n, id=n["_id"])
     if not is_root and cols[2].button("✕", key=f"x{n['_id']}", help="remove"):
@@ -191,11 +216,14 @@ def render_member(g, n, guide, is_last, is_excl, sib, idx, is_root=False, top=Fa
             sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
 
     if n.get("node") == "container":
+        child_flags = [] if is_root else flags + [not is_last]
         m = n["members"]
         for j, ch in enumerate(m):
-            render_member(g, ch, child, j == len(m) - 1, is_excl, m, j)
+            render_member(g, ch, child_flags, j == len(m) - 1, is_excl, m, j)
+        # add-row, indented to roughly the children's level
+        pad = (len(child_flags) + 1) * 22
         a = st.columns([1.6, 2.1, 2.4, 3.9])
-        a[0].markdown(_g(child + "╰╴"), unsafe_allow_html=True)
+        a[0].markdown(f"<div style='height:{H}px;width:{pad}px'></div>", unsafe_allow_html=True)
         if a[1].button("➕ condition", key=f"ac{n['_id']}"):
             open_modal("add_leaf", S.new_codes(), container=n["_id"])
         if a[2].button("➕ AND/OR group", key=f"ag{n['_id']}"):
@@ -339,14 +367,14 @@ def main():
                "(inclusion container, then exclusions subtracted in order).")
 
     with st.container(border=True):
-        st.markdown("<div class='sec-head sec-inc'>INCLUSION — base population (keep)</div>",
+        st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
                     unsafe_allow_html=True)
         render_member(g, g["inclusion"], "", True, False, None, None, is_root=True)
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     with st.container(border=True):
-        st.markdown("<div class='sec-head sec-exc'>EXCLUSIONS — removed from the population, in order ↓</div>",
+        st.markdown("<div class='sec-head sec-exc'>✕ EXCLUSIONS — removed from the population, in order · REMOVE ↓</div>",
                     unsafe_allow_html=True)
         n_ex = len(g["exclusions"])
         for i, m in enumerate(g["exclusions"]):
