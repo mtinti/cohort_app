@@ -52,6 +52,11 @@ def main():
             # wait for the real app body, not just the shell
             pg.wait_for_selector("[data-testid='stAppViewContainer']", timeout=30000)
             pg.wait_for_timeout(1500)             # let widgets settle
+            click = arg("--click", None)          # optionally click a button first (regex name)
+            if click:
+                import re
+                pg.get_by_role("button", name=re.compile(click)).first.click()
+                pg.wait_for_timeout(1800)
             path = os.path.join(OUT, f"{name}.png")
             pg.screenshot(path=path, full_page=True)
             b.close()

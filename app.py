@@ -41,6 +41,19 @@ input[aria-label="Group name"] {
   font-size: 1.5rem !important; font-weight: 700 !important; color: #14161c !important;
   padding: 0.5rem 0.7rem !important;
 }
+/* soft card fill so white rows sit on an off-white box (clearer boundaries) */
+div[data-testid="stVerticalBlockBorderWrapper"] { background: #fafbfd; }
+/* coloured section headers: keep (green) vs remove (red) */
+.sec-head { font-size: 1.15rem; font-weight: 700; padding: 8px 12px;
+            border-radius: 6px; margin-bottom: 12px; }
+.sec-inc { background: #e6f4ea; color: #0f5132; border-left: 7px solid #2e8b57; }
+.sec-exc { background: #fdeaea; color: #842029; border-left: 7px solid #c0392b; }
+/* dialog: clear border + readable, bordered fields */
+div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !important;
+                     box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
+div[role="dialog"] input, div[role="dialog"] textarea {
+  border: 1px solid #8b91a3 !important; background: #ffffff !important; color: #14161c !important; }
+div[role="dialog"] label, div[role="dialog"] p, div[role="dialog"] span { color: #14161c !important; }
 </style>
 """
 
@@ -152,24 +165,37 @@ def summary(n):
 
 
 # ----------------------------- tree rendering ------------------------------
-def render_member(g, n, depth, sib, idx, is_excl, is_root=False):
+GUIDE = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#9aa0b3;white-space:pre"
+
+
+def _g(s):
+    return f"<span style='{GUIDE}'>{s}</span>" if s else ""
+
+
+def render_member(g, n, guide, is_last, is_excl, sib, idx, is_root=False, top=False):
+    if is_root:
+        branch, child = "", ""
+    else:
+        branch = guide + ("└── " if is_last else "├── ")
+        child = guide + ("     " if is_last else "│    ")
     cols = st.columns([8, 0.7, 0.7, 0.7, 0.7])
-    cols[0].markdown(NBSP * depth + summary(n), unsafe_allow_html=True)
+    cols[0].markdown(_g(branch) + summary(n), unsafe_allow_html=True)
     if cols[1].button("✎", key=f"e{n['_id']}", help="edit"):
         open_modal("edit_container" if n.get("node") == "container" else "edit_leaf", n, id=n["_id"])
     if not is_root and cols[2].button("✕", key=f"x{n['_id']}", help="remove"):
         remove_node(g, n["_id"]); st.rerun()
-    if is_excl and depth == 0:
+    if is_excl and top:
         if cols[3].button("↑", key=f"u{n['_id']}") and idx > 0:
             sib[idx - 1], sib[idx] = sib[idx], sib[idx - 1]; st.rerun()
         if cols[4].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
             sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
 
     if n.get("node") == "container":
-        for j, ch in enumerate(n["members"]):
-            render_member(g, ch, depth + 1, n["members"], j, is_excl)
-        a = st.columns([0.6, 2.2, 2.2, 6])
-        a[0].markdown(NBSP * (depth + 1), unsafe_allow_html=True)
+        m = n["members"]
+        for j, ch in enumerate(m):
+            render_member(g, ch, child, j == len(m) - 1, is_excl, m, j)
+        a = st.columns([1.6, 2.1, 2.4, 3.9])
+        a[0].markdown(_g(child + "╰╴"), unsafe_allow_html=True)
         if a[1].button("➕ condition", key=f"ac{n['_id']}"):
             open_modal("add_leaf", S.new_codes(), container=n["_id"])
         if a[2].button("➕ AND/OR group", key=f"ag{n['_id']}"):
@@ -313,13 +339,18 @@ def main():
                "(inclusion container, then exclusions subtracted in order).")
 
     with st.container(border=True):
-        st.markdown("#### INCLUSION — base population")
-        render_member(g, g["inclusion"], 0, None, None, is_excl=False, is_root=True)
+        st.markdown("<div class='sec-head sec-inc'>INCLUSION — base population (keep)</div>",
+                    unsafe_allow_html=True)
+        render_member(g, g["inclusion"], "", True, False, None, None, is_root=True)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     with st.container(border=True):
-        st.markdown("#### EXCLUSIONS — subtracted in order ↓")
+        st.markdown("<div class='sec-head sec-exc'>EXCLUSIONS — removed from the population, in order ↓</div>",
+                    unsafe_allow_html=True)
+        n_ex = len(g["exclusions"])
         for i, m in enumerate(g["exclusions"]):
-            render_member(g, m, 0, g["exclusions"], i, is_excl=True)
+            render_member(g, m, "", i == n_ex - 1, True, g["exclusions"], i, top=True)
         a = st.columns([2.2, 2.5, 6])
         if a[0].button("➕ Add exclusion"):
             open_modal("add_leaf", S.new_codes(), container="__EXCL__")
