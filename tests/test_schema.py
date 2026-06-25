@@ -58,3 +58,24 @@ def test_every_kind_constructs_and_exports():
 
 def test_event_vocab_covers_all_event_types():
     assert set(S.EVENT_VOCAB) == set(S.EVENT_TYPES)
+
+
+def test_clone_group_fresh_ids_same_content():
+    g = S.build_example()["cohorts"][0]
+    clone = S.clone_group(g)
+
+    def ids(node, acc):
+        acc.append(node["_id"])
+        if node.get("node") == "container":
+            for m in node["members"]:
+                ids(m, acc)
+        return acc
+    orig_ids = ids(g["inclusion"], [g["_id"]]) + sum((ids(m, []) for m in g["exclusions"]), [])
+    new_ids = ids(clone["inclusion"], [clone["_id"]]) + sum((ids(m, []) for m in clone["exclusions"]), [])
+    assert set(orig_ids).isdisjoint(new_ids)            # no shared ids
+    # content identical except the renamed group
+    gc, cc = S.to_contract({"project": "x", "project_type": "biobank", "cohorts": [g]}), \
+        S.to_contract({"project": "x", "project_type": "biobank", "cohorts": [clone]})
+    assert clone["name"] == g["name"] + " (copy)"
+    gc["cohorts"][0]["name"] = cc["cohorts"][0]["name"]
+    assert gc == cc

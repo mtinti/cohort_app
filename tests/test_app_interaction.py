@@ -21,7 +21,7 @@ def download_yaml(page):
 def test_app_loads_example(page):
     assert page.get_by_text("INCLUSION — base population").is_visible()
     # both example groups present in the sidebar selector
-    assert page.get_by_role("radio", name="Control", exact=False).count() >= 1
+    assert page.get_by_role("radio", name="Group B", exact=False).count() >= 1
 
 
 def test_default_download_matches_contract(page):
@@ -32,9 +32,18 @@ def test_default_download_matches_contract(page):
 def test_add_group(page):
     # the example has no plain "Group 3" (it's "Group 3 — …"); adding makes one
     assert page.get_by_role("radio", name="Group 3", exact=True).count() == 0
-    page.get_by_role("button", name="Add group").click()
+    page.get_by_role("button", name=re.compile(r"Add$")).click()   # sidebar "➕ Add"
     settle(page)
     assert page.get_by_role("radio", name="Group 3", exact=True).count() == 1
+
+
+def test_clone_group(page):
+    before = len(download_yaml(page)["cohorts"])
+    page.get_by_role("button", name=re.compile(r"Clone")).click()
+    settle(page)
+    after = download_yaml(page)["cohorts"]
+    assert len(after) == before + 1
+    assert any(c["name"].endswith("(copy)") for c in after)
 
 
 def test_add_exclusion_via_dialog(page):

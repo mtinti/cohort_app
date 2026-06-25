@@ -78,6 +78,26 @@ def new_group(name="New group"):
     return {"_id": _id(), "name": name, "inclusion": new_container("AND"), "exclusions": []}
 
 
+def _regen_ids(node):
+    """Assign fresh _ids to a node and everything under it (for cloning)."""
+    node["_id"] = _id()
+    if node.get("node") == "container":
+        for m in node.get("members", []):
+            _regen_ids(m)
+
+
+def clone_group(g):
+    """Deep copy a group with brand-new _ids (so the tree stays addressable)."""
+    import copy
+    ng = copy.deepcopy(g)
+    ng["_id"] = _id()
+    _regen_ids(ng["inclusion"])
+    for m in ng["exclusions"]:
+        _regen_ids(m)
+    ng["name"] = (g.get("name", "Group") + " (copy)")
+    return ng
+
+
 def new_requirement():
     return {"project": "", "project_type": "biobank", "target_n": "", "ticket": "",
             "schema_version": SCHEMA_VERSION, "cohorts": [new_group("Group 1")]}
@@ -201,58 +221,60 @@ def validate(req):
 
 
 # ---------------------------------------------------------------------------
-# Worked example (mirrors examples/requirement.example.yaml).
+# Worked example — deliberately GENERIC / illustrative (placeholder codes and
+# labels), so it does not resemble any real research request. It only shows the
+# STRUCTURE: two self-contained groups, AND/OR nesting, a sample-event rule,
+# and ordered exclusions.
 # ---------------------------------------------------------------------------
-def _t2dm_union():
-    return new_container("OR", "Type 2 diabetes mellitus (any source)", [
-        new_codes("T2DM in hospital admissions", "SMR01", icd=["E11"]),
-        new_codes("T2DM in GP records", "GP", read=["C10E.", "C1087"]),
+def _condition_union():
+    return new_container("OR", "Condition of interest (any source)", [
+        new_codes("Condition in hospital data", "SMR01", icd=["A00"]),
+        new_codes("Condition in GP data", "GP", read=["X1111"]),
     ])
 
 
-def _base_demographic():
+def _adults():
     return new_demographic("Adults resident in Scotland", "SHARE_Demography",
                            age_min=18, age_max=80, sex="both", residence="Scotland", simd="any")
 
 
 def build_example():
     req = new_requirement()
-    req.update(project="Lipidomics of Diabetic Retinopathy and Maculopathy",
-               project_type="biobank", target_n="15 per group (90 total)", ticket="SHARE-2213")
+    req.update(project="Example cohort request (edit me)",
+               project_type="biobank", target_n="approx. N per group", ticket="")
 
-    g3 = new_group("Group 3 — T2DM with severe preproliferative DR, sampled before diagnosis")
-    g3["inclusion"] = new_container("AND", members=[
-        _base_demographic(),
-        _t2dm_union(),
-        new_container("OR", "Severe preproliferative diabetic retinopathy", [
-            new_codes("Severe preprolif DR (GP READ)", "GP", read=["F4207", "F4208", "2BBr.", "2BBo."]),
-            new_codes("Diabetic retinopathy (hospital ICD)", "SMR01", icd=["E11.3", "E13.3", "E14.3"]),
+    a = new_group("Group A — cases")
+    a["inclusion"] = new_container("AND", members=[
+        _adults(),
+        _condition_union(),
+        new_container("OR", "A second condition (placeholder)", [
+            new_codes("Second condition (GP READ)", "GP", read=["X2222"]),
+            new_codes("Second condition (hospital ICD)", "SMR01", icd=["A01"]),
         ]),
-        new_sample("Has a biobank sample before first DR diagnosis",
+        new_sample("Has a sample before first diagnosis",
                    event_type="gp_data", occurrence="first",
-                   event_label="First GP diagnosis of diabetic retinopathy",
-                   codes=["2BBP.", "2BBQ."], direction="before", within="6 months"),
+                   event_label="First recorded diagnosis", codes=["X1111"],
+                   direction="before", within="6 months"),
     ])
-    g3["exclusions"] = [
-        new_codes("Inherited lipid metabolism disorders", "SMR01", icd=["E78", "E74", "E75"]),
-        new_note("Prior intravitreal therapy for DMO",
-                 "Exclude prior anti-VEGF / steroid intravitreal therapy (no agreed code yet)"),
+    a["exclusions"] = [
+        new_codes("Comorbidity to exclude", "SMR01", icd=["B00"]),
+        new_note("Other criterion (no code yet)",
+                 "Describe any criterion that has no agreed code."),
     ]
 
-    ctrl = new_group("Control — T2DM, no diabetic retinopathy, sampled after diagnosis")
-    ctrl["inclusion"] = new_container("AND", members=[
-        _base_demographic(),
-        _t2dm_union(),
-        new_sample("Has a biobank sample after first T2DM diagnosis",
+    b = new_group("Group B — controls")
+    b["inclusion"] = new_container("AND", members=[
+        _adults(),
+        _condition_union(),
+        new_sample("Has a sample after first diagnosis",
                    event_type="gp_data", occurrence="first",
-                   event_label="First GP diagnosis of Type 2 diabetes",
-                   codes=["C10E.", "C1087"], direction="after", within="12 months"),
+                   event_label="First recorded diagnosis", codes=["X1111"],
+                   direction="after", within="12 months"),
     ])
-    ctrl["exclusions"] = [
-        new_codes("Any diabetic retinopathy (exclude)", "GP",
-                  read=["2BBP.", "2BBQ.", "2BBr.", "2BBo.", "F4207", "F4208"]),
-        new_codes("Inherited lipid metabolism disorders", "SMR01", icd=["E78", "E74", "E75"]),
+    b["exclusions"] = [
+        new_codes("Exclude a condition variant", "GP", read=["X3333"]),
+        new_codes("Comorbidity to exclude", "SMR01", icd=["B00"]),
     ]
 
-    req["cohorts"] = [g3, ctrl]
+    req["cohorts"] = [a, b]
     return req

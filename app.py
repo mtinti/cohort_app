@@ -17,6 +17,33 @@ import requirement_schema as S
 st.set_page_config(page_title="Cohort Requirement Builder", layout="wide")
 NBSP = "&nbsp;&nbsp;&nbsp;&nbsp;"
 
+CSS = """
+<style>
+/* higher-contrast body text */
+.stApp, .stMarkdown p, .stMarkdown span, label, .stRadio, .stTextInput { color: #14161c; }
+/* thicker, higher-contrast bordered containers */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+  border: 3px solid #3a3f4b !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+/* high-contrast inline code tags  ([codes], [sample] …) */
+.stMarkdown code {
+  background: #e6e9f0 !important;
+  color: #1a1c24 !important;
+  border: 1px solid #c7ccd8;
+  padding: 1px 6px; border-radius: 5px; font-weight: 600;
+}
+/* darker captions (were low-contrast grey) */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #44485a !important; }
+/* big, bold group-name field */
+input[aria-label="Group name"] {
+  font-size: 1.5rem !important; font-weight: 700 !important; color: #14161c !important;
+  padding: 0.5rem 0.7rem !important;
+}
+</style>
+"""
+
 
 # ----------------------------- state helpers -------------------------------
 def init():
@@ -245,11 +272,16 @@ def sidebar():
                                         format_func=lambda i: names[i],
                                         index=min(st.session_state.sel, len(names) - 1),
                                         label_visibility="collapsed")
-        c = st.columns(2)
-        if c[0].button("➕ Add group", use_container_width=True):
+        c = st.columns(3)
+        if c[0].button("➕ Add", use_container_width=True, help="add a new empty group"):
             req["cohorts"].append(S.new_group(f"Group {len(req['cohorts'])+1}"))
             st.session_state.sel = len(req["cohorts"]) - 1; st.rerun()
-        if c[1].button("🗑 Remove", use_container_width=True, disabled=len(req["cohorts"]) <= 1):
+        if c[1].button("⧉ Clone", use_container_width=True,
+                       help="duplicate this group as a starting point for a similar cohort"):
+            clone = S.clone_group(req["cohorts"][st.session_state.sel])
+            req["cohorts"].insert(st.session_state.sel + 1, clone)
+            st.session_state.sel += 1; st.rerun()
+        if c[2].button("🗑 Remove", use_container_width=True, disabled=len(req["cohorts"]) <= 1):
             req["cohorts"].pop(st.session_state.sel)
             st.session_state.sel = 0; st.rerun()
 
@@ -270,11 +302,13 @@ def sidebar():
 # ----------------------------- main ----------------------------------------
 def main():
     init()
+    st.markdown(CSS, unsafe_allow_html=True)
     sidebar()
     req = st.session_state.req
     g = group()
 
-    g["name"] = st.text_input("Group name", g["name"])
+    st.markdown("### Group name")
+    g["name"] = st.text_input("Group name", g["name"], label_visibility="collapsed")
     st.caption("ⓘ This group defines one complete RDMP build "
                "(inclusion container, then exclusions subtracted in order).")
 
