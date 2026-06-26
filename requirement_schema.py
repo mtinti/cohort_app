@@ -231,7 +231,7 @@ def _validate_node(n, gname, project_type, errs):
         if n.get("op") not in OPS:
             errs.append(f"{gname}: container op must be AND or OR.")
         if not n.get("members"):
-            errs.append(f"{gname}: a {n.get('op', '?')} group has no members.")
+            errs.append(f"{gname}: a {n.get('op', '?')} container has no members.")
         for m in n.get("members", []):
             _validate_node(m, gname, project_type, errs)
         return

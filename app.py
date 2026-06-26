@@ -1,9 +1,9 @@
-"""Cohort Requirement Builder — Streamlit form.
+"""Health Cohort Builder — Streamlit form.
 
-Researcher authors a SHARE/GoSHARE cohort requirement directly; the app emits a
-`requirement.yaml` (the contract for the cohort builder). Structure mirrors the
-RDMP CIC: each group = one build; inclusion CONTAINER (AND=INTERSECT / OR=UNION)
-built first, then an ORDERED list of exclusions subtracted in turn (root EXCEPT).
+A researcher authors a cohort definition directly; the app emits a
+`requirement.yaml`. Each cohort group is self-contained: an inclusion CONTAINER
+(items combined with AND=INTERSECT / OR=UNION; may nest), then an ORDERED list of
+exclusions removed in turn.
 
 See docs/SPEC.md. Schema lives in requirement_schema.py (single source of truth).
 """
@@ -229,8 +229,8 @@ def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=Fa
              f"<div class='{cls}' style='align-self:center'>{summary_html(n)}</div></div>")
     cols = st.columns([8, 0.6, 0.6, 0.6, 0.6, 0.6])
     cols[0].markdown(label, unsafe_allow_html=True)
-    # ➕ lives on the CONTAINER's own row, so it is unambiguous which group you add into
-    if is_c and cols[1].button("➕", key=f"a{n['_id']}", help="add a condition or sub-group into THIS group"):
+    # ➕ lives on the CONTAINER's own row, so it is unambiguous which container you add into
+    if is_c and cols[1].button("➕", key=f"a{n['_id']}", help="add a condition or sub-container into THIS container"):
         open_modal("add_to", {}, container=n["_id"])
     if cols[2].button("✎", key=f"e{n['_id']}", help="edit"):
         open_modal("edit_container" if is_c else "edit_leaf", n, id=n["_id"])
@@ -245,11 +245,12 @@ def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=Fa
     if is_c:
         child_flags = [] if is_root else flags + [not is_last]
         m = n["members"]
-        if not m:        # visible placeholder so an empty group isn't invisible
+        if not m:        # visible placeholder so an empty container isn't invisible
             rail2 = _rail(child_flags, True)
             st.markdown(f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail2}"
                         f"<div style='align-self:center;color:#8a8f9c;font-style:italic'>"
-                        f"empty group — use ➕ on the row above to add</div></div>", unsafe_allow_html=True)
+                        f"empty {OP_LABEL[n['op']]} container ({OP_MEAN[n['op']]}) — use ➕ "
+                        f"on the row above to add</div></div>", unsafe_allow_html=True)
         for j, ch in enumerate(m):
             render_member(g, ch, child_flags, j == len(m) - 1, is_excl, m, j)
 
@@ -330,30 +331,38 @@ def yaml_dialog():
         close_modal(); st.rerun()
 
 
-@st.dialog("Add to group")
+@st.dialog("Add")
 def add_dialog():
-    m = st.session_state.modal
-    cont = find_node(group(), m["container"])
-    st.markdown("Add into &nbsp; " + (summary_html(cont) if cont else "?"), unsafe_allow_html=True)
+    tgt = st.session_state.modal["container"]
+    excl = tgt == "__EXCL__"
+    where = ("the <b>EXCLUSIONS</b> list (each removed in order)" if excl
+             else summary_html(find_node(group(), tgt)))
+    st.markdown("Add into &nbsp; " + where, unsafe_allow_html=True)
     st.write("")
-    if st.button("➕ Condition", type="primary", use_container_width=True):
-        st.session_state.modal = {"mode": "add_leaf", "container": m["container"]}
+    # condition = a single criterion (white button)
+    if st.button("➕ Condition", use_container_width=True):
+        st.session_state.modal = {"mode": "add_leaf", "container": tgt}
         st.session_state.work = S.new_codes()
         st.rerun()
-    st.caption("…or a sub-group that combines its items with:")
+    st.caption("…or a sub-container that combines the items inside it with:")
+
+    def _add_container(op):
+        (group()["exclusions"] if excl else find_node(group(), tgt)["members"]).append(S.new_container(op))
+        close_modal(); st.rerun()
+
     c = st.columns(2)
     if c[0].button(f"➕ {OP_FULL['AND']}", use_container_width=True):
-        cont["members"].append(S.new_container("AND")); close_modal(); st.rerun()
+        _add_container("AND")
     if c[1].button(f"➕ {OP_FULL['OR']}", use_container_width=True):
-        cont["members"].append(S.new_container("OR")); close_modal(); st.rerun()
+        _add_container("OR")
     if st.button("Cancel", use_container_width=True):
         close_modal(); st.rerun()
 
 
-@st.dialog("Group (container)")
+@st.dialog("Container")
 def container_dialog():
     work = st.session_state.work
-    work["op"] = st.radio("How are the items in this group combined?", S.OPS,
+    work["op"] = st.radio("How are the items in this container combined?", S.OPS,
                           index=S.OPS.index(work["op"]),
                           format_func=lambda o: OP_FULL[o])
     work["label"] = st.text_input("Label (optional)", work.get("label", ""))
@@ -452,11 +461,8 @@ def main():
         n_ex = len(g["exclusions"])
         for i, m in enumerate(g["exclusions"]):
             render_member(g, m, [], i == n_ex - 1, True, g["exclusions"], i, top=True)
-        a = st.columns([2.2, 2.5, 6])
-        if a[0].button("➕ Add exclusion"):
-            open_modal("add_leaf", S.new_codes(), container="__EXCL__")
-        if a[1].button("➕ Add exclusion group"):
-            g["exclusions"].append(S.new_container("OR")); st.rerun()
+        if st.button("➕ Add exclusion"):
+            open_modal("add_to", {}, container="__EXCL__")
 
     errs = S.validate(req)
     if errs:

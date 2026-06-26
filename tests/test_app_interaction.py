@@ -66,8 +66,9 @@ def test_add_subgroup_via_container_button(page):
 
 
 def test_add_exclusion_via_dialog(page):
-    # match "➕ Add exclusion" but NOT "➕ Add exclusion group"
     page.get_by_role("button", name=re.compile(r"Add exclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
     settle(page)
     dlg = page.get_by_role("dialog")
     dlg.get_by_role("textbox", name="Label").fill("Test exclusion")
@@ -82,15 +83,16 @@ def test_add_exclusion_via_dialog(page):
     assert any(e.get("source") == "TEST_CAT" and e.get("icd") == ["Z99"] for e in excls)
 
 
-def test_add_exclusion_group_no_error(page):
+def test_add_exclusion_container_via_dialog(page):
     before = len(download_yaml(page)["cohorts"][0]["exclusions"])
-    page.get_by_role("button", name=re.compile("Add exclusion group")).click()
+    page.get_by_role("button", name=re.compile(r"Add exclusion$")).click()
     settle(page)
-    # the app must not raise (a top-level exclusion container previously crashed)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("UNION")).click()
+    settle(page)
     assert page.locator("[data-testid='stException']").count() == 0
     excl = download_yaml(page)["cohorts"][0]["exclusions"]
     assert len(excl) == before + 1
-    assert any("op" in e for e in excl)            # the new node is a container
+    assert any("op" in e for e in excl)            # a container was added (not a condition)
 
 
 def test_reorder_exclusion(page):
