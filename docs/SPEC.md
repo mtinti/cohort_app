@@ -1,12 +1,13 @@
 # Requirement Authoring Web Tool — Requirements Spec
 
-> **Branch note:** this spec describes the full **SHARE/GoSHARE** design,
-> including biobank **sample / event-anchored selection** and RDMP mapping —
-> implemented on the **`share_cohort_builder`** branch. On **`main`** the tool is
-> a **general health-data cohort builder**: the `sample` condition kind and the
-> event/biobank features are removed (condition kinds are demographic / codes /
-> note). Everything else (groups, INTERSECT/UNION containers, ordered exclusions,
-> load / clone / preview) applies to both.
+> **Variant note:** this spec describes the full **SHARE/GoSHARE** design,
+> including biobank **sample / event-anchored selection** and RDMP mapping. That
+> is now a **feature flag on the single `main` codebase**: set
+> `COHORT_ENABLE_SAMPLES=1` to enable the `sample` condition kind + biobank
+> project type. Default (flag off) is a **general health-data cohort builder**
+> (condition kinds demographic / codes / note). Everything else (groups,
+> INTERSECT/UNION containers, ordered exclusions, load / clone / preview) is
+> shared by both.
 
 **Status:** draft v2 (2026-06-25)
 **Decisions locked:** Streamlit (Python) · structured-form-only · download-YAML-only ·

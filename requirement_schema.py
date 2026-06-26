@@ -12,13 +12,31 @@ Design (see docs/SPEC.md): each GROUP is self-contained = one RDMP build.
 inclusion is a CONTAINER (AND=INTERSECT / OR=UNION) built first; exclusions are
 an ORDERED list subtracted in turn (root EXCEPT). Leaves are cohort sets of one
 of three kinds: demographic / codes / note.
+
+Feature flag: set env COHORT_ENABLE_SAMPLES=1 to enable the SHARE/GoSHARE variant,
+which adds a `sample` condition kind (biobank sample / event-anchored selection)
+and biobank project type. Default OFF = general health-data cohort builder.
 """
+import os
 import uuid
 
-PROJECT_TYPES = ["recruitment", "registry", "other"]
+ENABLE_SAMPLES = os.environ.get("COHORT_ENABLE_SAMPLES", "").lower() in ("1", "true", "yes", "on")
+
 OPS = ["AND", "OR"]
-KINDS = ["demographic", "codes", "note"]
+KINDS = (["demographic", "codes", "sample", "note"] if ENABLE_SAMPLES
+         else ["demographic", "codes", "note"])
+PROJECT_TYPES = (["recruitment", "biobank"] if ENABLE_SAMPLES
+                 else ["recruitment", "registry", "other"])
+
+# Sample / event-anchored selection — SHARE variant only (surfaced when ENABLE_SAMPLES).
+EVENT_TYPES = ["hospitalisation", "medicine", "gp_data", "lab_result"]
+EVENT_VOCAB = {"hospitalisation": "ICD-10", "medicine": "BNF",
+               "gp_data": "READ", "lab_result": "free text"}
+OCCURRENCE = ["first", "last"]
+DIRECTION = ["before", "after"]
+WITHIN_UNITS = ["days", "weeks", "months", "years"]
 SCHEMA_VERSION = 1
+_DEMOG_SRC = "SHARE_Demography" if ENABLE_SAMPLES else "Demographics"
 
 
 def _id():
@@ -33,7 +51,7 @@ def new_container(op="AND", label="", members=None):
             "members": members if members is not None else []}
 
 
-def new_demographic(label="", source="Demographics", age_min=None, age_max=None,
+def new_demographic(label="", source=_DEMOG_SRC, age_min=None, age_max=None,
                     sex="both", residence="", simd=""):
     return {"_id": _id(), "node": "leaf", "kind": "demographic", "label": label,
             "source": source, "age_min": age_min, "age_max": age_max,
@@ -45,13 +63,23 @@ def new_codes(label="", source="", icd=None, read=None, bnf=None, drug_names=Non
             "icd": icd or [], "read": read or [], "bnf": bnf or [], "drug_names": drug_names or []}
 
 
+def new_sample(label="", event_type="gp_data", occurrence="first", event_label="",
+               codes=None, direction="before", within=""):
+    # SHARE variant: "person has >=1 sample positioned in time vs an index event"
+    return {"_id": _id(), "node": "leaf", "kind": "sample", "label": label,
+            "sample_event": {
+                "event": {"type": event_type, "occurrence": occurrence,
+                          "label": event_label, "codes": codes or []},
+                "direction": direction, "within": within}}
+
+
 def new_note(label="", text=""):
     return {"_id": _id(), "node": "leaf", "kind": "note", "label": label, "text": text}
 
 
 def new_leaf(kind, label=""):
     return {"demographic": new_demographic, "codes": new_codes,
-            "note": new_note}[kind](label=label)
+            "sample": new_sample, "note": new_note}[kind](label=label)
 
 
 def new_group(name="New group"):
@@ -112,6 +140,16 @@ def _clean(n):
         for f in ("icd", "read", "bnf", "drug_names"):
             if n.get(f):
                 out[f] = list(n[f])
+    elif k == "sample":
+        ev = n["sample_event"]["event"]
+        event = {"type": ev["type"], "occurrence": ev["occurrence"]}
+        if ev.get("label"):
+            event["label"] = ev["label"]
+        event["codes"] = list(ev.get("codes", []))
+        se = {"event": event, "direction": n["sample_event"]["direction"]}
+        if n["sample_event"].get("within"):
+            se["within"] = n["sample_event"]["within"]
+        out["sample_event"] = se
     elif k == "note":
         out["text"] = n.get("text", "")
     return out
@@ -132,6 +170,15 @@ def _build_member(d):
     if k == "codes":
         return new_codes(d.get("label", ""), d.get("source", ""), d.get("icd"),
                          d.get("read"), d.get("bnf"), d.get("drug_names"))
+    if k == "sample":
+        if not ENABLE_SAMPLES:        # general mode: keep it visible as a note
+            return new_note(d.get("label", "(sample)"),
+                            "sample condition — enable COHORT_ENABLE_SAMPLES to edit")
+        se = d.get("sample_event", {}) or {}
+        ev = se.get("event", {}) or {}
+        return new_sample(d.get("label", ""), ev.get("type", "gp_data"),
+                          ev.get("occurrence", "first"), ev.get("label", ""),
+                          ev.get("codes"), se.get("direction", "before"), se.get("within", ""))
     if k == "note":
         return new_note(d.get("label", ""), d.get("text", ""))
     return new_note(d.get("label", "(unknown)"), str(d))   # tolerate unknown/legacy kinds
@@ -197,6 +244,14 @@ def _validate_node(n, gname, project_type, errs):
         a, b = n.get("age_min"), n.get("age_max")
         if a is not None and b is not None and a > b:
             errs.append(f"{gname}: '{lbl}' has age_min > age_max.")
+    elif k == "sample":
+        ev = n.get("sample_event", {}).get("event", {})
+        if ev.get("type") not in EVENT_TYPES:
+            errs.append(f"{gname}: '{lbl}' has an invalid event type.")
+        if ev.get("type") != "lab_result" and not ev.get("codes"):
+            errs.append(f"{gname}: '{lbl}' event needs at least one code.")
+        if n.get("sample_event", {}).get("direction") not in DIRECTION:
+            errs.append(f"{gname}: '{lbl}' direction must be before or after.")
     elif k == "note":
         if not n.get("text", "").strip():
             errs.append(f"{gname}: note '{lbl}' has no text.")
@@ -230,46 +285,56 @@ def validate(req):
 # labels). It only shows the STRUCTURE: two self-contained groups, AND/OR
 # nesting, code conditions across sources, and ordered exclusions.
 # ---------------------------------------------------------------------------
+def _src(hospital, gp):
+    """Source names differ slightly between the SHARE variant and general mode."""
+    return (hospital, gp) if not ENABLE_SAMPLES else ("SMR01", "GP")
+
+
 def _condition_union():
+    h, gp = _src("hospital", "primary_care")
     return new_container("OR", "Condition of interest (any source)", [
-        new_codes("Condition in hospital data", "hospital", icd=["A00"]),
-        new_codes("Condition in primary care", "primary_care", read=["X1111"]),
+        new_codes("Condition in hospital data", h, icd=["A00"]),
+        new_codes("Condition in primary care", gp, read=["X1111"]),
     ])
 
 
 def _adults():
-    return new_demographic("Adults", "Demographics",
+    return new_demographic("Adults", _DEMOG_SRC,
                            age_min=18, age_max=80, sex="both", residence="", simd="")
 
 
 def build_example():
     req = new_requirement()
     req.update(project="Example cohort request (edit me)",
-               project_type="recruitment", target_n="approx. N per group", ticket="")
+               project_type=PROJECT_TYPES[0], target_n="approx. N per group", ticket="")
+    h, gp = _src("hospital", "primary_care")
 
     a = new_group("Group A — cases")
-    a["inclusion"] = new_container("AND", members=[
+    a_members = [
         _adults(),
         _condition_union(),
         new_container("OR", "A second condition (placeholder)", [
-            new_codes("Second condition (primary care)", "primary_care", read=["X2222"]),
-            new_codes("Second condition (hospital)", "hospital", icd=["A01"]),
+            new_codes("Second condition (primary care)", gp, read=["X2222"]),
+            new_codes("Second condition (hospital)", h, icd=["A01"]),
         ]),
-    ])
+    ]
+    if ENABLE_SAMPLES:        # SHARE variant: add an event-anchored sample condition
+        a_members.append(new_sample("Has a sample before first diagnosis",
+                                    event_type="gp_data", occurrence="first",
+                                    event_label="First recorded diagnosis", codes=["X1111"],
+                                    direction="before", within="6 months"))
+    a["inclusion"] = new_container("AND", members=a_members)
     a["exclusions"] = [
-        new_codes("Comorbidity to exclude", "hospital", icd=["B00"]),
+        new_codes("Comorbidity to exclude", h, icd=["B00"]),
         new_note("Other criterion (no code yet)",
                  "Describe any criterion that has no agreed code."),
     ]
 
     b = new_group("Group B — controls")
-    b["inclusion"] = new_container("AND", members=[
-        _adults(),
-        _condition_union(),
-    ])
+    b["inclusion"] = new_container("AND", members=[_adults(), _condition_union()])
     b["exclusions"] = [
-        new_codes("Exclude a condition variant", "primary_care", read=["X3333"]),
-        new_codes("Comorbidity to exclude", "hospital", icd=["B00"]),
+        new_codes("Exclude a condition variant", gp, read=["X3333"]),
+        new_codes("Comorbidity to exclude", h, icd=["B00"]),
     ]
 
     req["cohorts"] = [a, b]

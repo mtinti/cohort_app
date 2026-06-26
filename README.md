@@ -9,13 +9,23 @@ Why: a typed, structured form removes whole classes of error (criteria lost in
 free text, mis-transcribed codes) and makes the cohort logic — nested AND/OR
 sets and ordered exclusions — explicit.
 
-## Branches
+## Variants (one codebase, one feature flag)
 
-- **`main`** — general cohort builder for health data (this branch).
-- **`share_cohort_builder`** — the SHARE/GoSHARE variant, which additionally
-  supports **biobank sample / event-anchored selection** ("has ≥1 sample
-  before/after a hospitalisation / prescription / diagnosis index date") and
-  maps onto the RDMP cohort-build pipeline.
+Default is the **general health-data cohort builder**. Set
+`COHORT_ENABLE_SAMPLES=1` to enable the **SHARE/GoSHARE variant**, which adds a
+`sample` condition kind (biobank sample / event-anchored selection — "≥1 sample
+before/after a hospitalisation / prescription / diagnosis index date") and the
+biobank project type.
+
+```bash
+streamlit run app.py                            # general builder
+COHORT_ENABLE_SAMPLES=1 streamlit run app.py    # SHARE/GoSHARE variant
+```
+
+A general-mode session can still **load** a SHARE-authored YAML — sample
+conditions appear as read-only notes; enable the flag to edit them.
+(The `share_cohort_builder` branch is retained only as the archive tag
+`archive/share_cohort_builder`; all development is on `main`.)
 
 ## Design in one picture
 

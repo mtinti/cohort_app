@@ -47,8 +47,27 @@ def test_every_kind_constructs_and_exports():
         assert cleaned["kind"] == k
 
 
-def test_no_sample_kind():
-    assert "sample" not in S.KINDS and not hasattr(S, "new_sample")
+def test_samples_off_by_default():
+    # default (no env) = general builder: no sample kind, no biobank project type
+    assert "sample" not in S.KINDS
+    assert "biobank" not in S.PROJECT_TYPES
+
+
+def test_samples_enabled_via_flag():
+    # COHORT_ENABLE_SAMPLES=1 turns on the SHARE variant (checked in a clean subprocess)
+    import os
+    import subprocess
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = ("import requirement_schema as S;"
+            "assert 'sample' in S.KINDS;"
+            "assert 'biobank' in S.PROJECT_TYPES;"
+            "assert S.validate(S.build_example()) == [];"
+            "print('ok')")
+    r = subprocess.run([sys.executable, "-c", code], cwd=root,
+                       env={**os.environ, "COHORT_ENABLE_SAMPLES": "1"},
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "ok" in r.stdout, r.stderr
 
 
 def test_from_contract_roundtrip():

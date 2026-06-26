@@ -182,6 +182,12 @@ def summary_html(n):
         if n.get("simd"):
             bits.append(f"SIMD {_esc(n['simd'])}")
         return tag + lbl + (f" — {', '.join(bits)}" if bits else "")
+    if k == "sample":
+        se = n["sample_event"]
+        ev = se["event"]
+        w = f" within {_esc(se['within'])}" if se.get("within") else ""
+        return tag + (f"{lbl} — ≥1 sample {se['direction']} "
+                      f"{ev['occurrence']} {_esc(ev['type'])} index{w}")
     return tag + lbl
 
 
@@ -279,6 +285,20 @@ def leaf_dialog():
         work["bnf"] = _lines(c2[0].text_area("BNF", _join(work.get("bnf")), height=90))
         work["drug_names"] = _lines(c2[1].text_area("Drug names", _join(work.get("drug_names")), height=90))
         st.caption("one code/range per line · e.g. E11, F00-09, C00-D48, 6.1-6.6")
+    elif k == "sample":
+        st.caption("ⓘ Counts PEOPLE who have ≥1 sample positioned vs the event. The sample is not selected.")
+        se = work["sample_event"]
+        ev = se["event"]
+        ev["type"] = st.selectbox("Event type", S.EVENT_TYPES, index=S.EVENT_TYPES.index(ev["type"]))
+        st.caption(f"codes vocabulary for this event: **{S.EVENT_VOCAB[ev['type']]}**")
+        ev["occurrence"] = st.radio("Occurrence (defines the index date)", S.OCCURRENCE,
+                                    index=S.OCCURRENCE.index(ev["occurrence"]), horizontal=True)
+        ev["label"] = st.text_input("Event label", ev.get("label", ""))
+        ev["codes"] = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=80))
+        se["direction"] = st.radio("Sample is", S.DIRECTION,
+                                   index=S.DIRECTION.index(se["direction"]), horizontal=True)
+        se["within"] = st.text_input("Within window (blank = any time in that direction)",
+                                     se.get("within", ""), placeholder="e.g. 6 months")
     elif k == "note":
         work["text"] = st.text_area("Text", work.get("text", ""), height=90)
 
