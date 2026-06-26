@@ -452,6 +452,8 @@ def main():
         st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
                     unsafe_allow_html=True)
         render_member(g, g["inclusion"], [], True, False, None, None, is_root=True)
+        if st.button("➕ Add inclusion"):
+            open_modal("add_to", {}, container=g["inclusion"]["_id"])
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 

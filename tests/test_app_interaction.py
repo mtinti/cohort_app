@@ -54,6 +54,22 @@ def test_clone_group(page):
     assert any(c["name"].endswith("(copy)") for c in after)
 
 
+def test_add_inclusion_button(page):
+    before = len(download_yaml(page)["cohorts"][0]["inclusion"]["members"])
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Source / dataset").fill("DS")
+    dlg.get_by_role("textbox", name="ICD-10").fill("Z01")
+    page.keyboard.press("Tab"); settle(page)
+    dlg.get_by_role("button", name="Save").click(); settle(page)
+    after = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
+    assert len(after) == before + 1
+    assert any(m.get("source") == "DS" and m.get("icd") == ["Z01"] for m in after)
+
+
 def test_add_subgroup_via_container_button(page):
     # the container's own ➕ (exact, not the sidebar "➕ Add") adds into THAT group
     before = len(download_yaml(page)["cohorts"][0]["inclusion"]["members"])
