@@ -14,7 +14,7 @@ import streamlit as st
 
 import requirement_schema as S
 
-st.set_page_config(page_title="Cohort Requirement Builder", layout="wide")
+st.set_page_config(page_title="Health Cohort Builder", layout="wide")
 NBSP = "&nbsp;&nbsp;&nbsp;&nbsp;"
 # Display names for the set operators (stored op stays AND/OR in the YAML contract)
 OP_LABEL = {"AND": "INTERSECT", "OR": "UNION"}
@@ -368,7 +368,7 @@ def container_dialog():
 def sidebar():
     req = st.session_state.req
     with st.sidebar:
-        st.title("Cohort Requirement Builder")
+        st.title("Health Cohort Builder")
         st.subheader("Project")
         req["project"] = st.text_input("Title", req["project"])
         pt = req["project_type"] if req["project_type"] in S.PROJECT_TYPES else S.PROJECT_TYPES[0]
