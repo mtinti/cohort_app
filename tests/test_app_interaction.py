@@ -510,3 +510,189 @@ def test_dialog_state_resets_between_opens(page):
     settle(page)
     leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][0]
     assert leaf.get("sex") is None                              # 'any' is not exported
+
+
+# ---------------------------------------------------------------------------
+# Full clickable coverage — every remaining button/field has one behaviour test
+# ---------------------------------------------------------------------------
+def test_ticket_names_download(page):
+    page.get_by_role("textbox", name="Ticket (optional)").fill("TICK-42")
+    page.keyboard.press("Enter")
+    settle(page)
+    with page.expect_download() as di:
+        page.get_by_role("button", name="Download YAML").click()
+    assert di.value.suggested_filename == "TICK-42.requirement.yaml"
+    assert yaml.safe_load(open(di.value.path()))["ticket"] == "TICK-42"
+
+
+def test_contract_parties_export(page):
+    page.get_by_text("📜 Contract header").click()
+    settle(page)
+    page.get_by_role("textbox", name="Requested by").fill("Dr Who")
+    page.keyboard.press("Enter")
+    settle(page)
+    page.get_by_role("textbox", name="Approved by").fill("A Reviewer")
+    page.keyboard.press("Enter")
+    settle(page)
+    got = download_yaml(page)["contract"]
+    assert got["requested_by"] == "Dr Who" and got["approved_by"] == "A Reviewer"
+
+
+def test_remove_container_with_children(page):
+    before = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
+    # ✕ order: Adults(0), OR 'Condition of interest'(1) — removes the subtree
+    page.get_by_role("button", name="✕").nth(1).click()
+    settle(page)
+    after = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
+    assert len(after) == len(before) - 1
+    assert not any(m.get("label") == "Condition of interest (any source)" for m in after)
+
+
+def test_move_exclusion_up(page):
+    before = download_yaml(page)["cohorts"][0]["exclusions"]
+    page.get_by_role("button", name="↑").nth(1).click()    # second exclusion up
+    settle(page)
+    after = download_yaml(page)["cohorts"][0]["exclusions"]
+    assert [e.get("label") for e in after[:2]] == [
+        before[1].get("label"), before[0].get("label")]
+    # ↑ on the FIRST exclusion is a no-op (already first)
+    page.get_by_role("button", name="↑").first.click()
+    settle(page)
+    assert download_yaml(page)["cohorts"][0]["exclusions"] == after
+
+
+def test_add_dialog_cancel(page):
+    before = download_yaml(page)
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+    settle(page)
+    assert page.get_by_role("dialog").count() == 0
+    assert download_yaml(page) == before
+
+
+def test_container_dialog_cancel(page):
+    before = download_yaml(page)
+    page.get_by_role("button", name="✎").nth(2).click()    # OR container
+    settle(page)
+    page.get_by_role("dialog").get_by_text("INTERSECT — all of (AND)").click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+    settle(page)
+    assert download_yaml(page) == before                   # op change abandoned
+
+
+def test_preview_dialog_download_and_close(page):
+    page.get_by_role("button", name=re.compile("Preview YAML")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    with page.expect_download() as di:
+        dlg.get_by_role("button", name=re.compile("Download")).click()
+    from_preview = yaml.safe_load(open(di.value.path()))
+    settle(page)
+    # two 'Close' matches: ours + streamlit's dialog-chrome X — pick ours
+    page.get_by_role("dialog").locator("[data-testid='stBaseButton-secondary']").filter(
+        has_text="Close").click()
+    settle(page)
+    assert page.get_by_role("dialog").count() == 0
+    # the preview's download equals the sidebar's download
+    assert from_preview == download_yaml(page)
+
+
+def test_demographic_all_fields(page):
+    page.get_by_role("button", name="✎").nth(1).click()    # 'Adults'
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Age min").fill("20")
+    dlg.get_by_role("textbox", name="Residence").fill("Region X")
+    dlg.get_by_role("textbox", name="SIMD").fill("1-2")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_text("not yet compilable").is_visible()   # feasibility warning
+    dlg.get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][0]
+    assert leaf["age_min"] == 20 and leaf["residence"] == "Region X" and leaf["simd"] == "1-2"
+
+
+def test_note_condition_via_dialog(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 0, "note")     # Kind -> note
+    dlg.get_by_role("textbox", name="Text").fill("criterion with no agreed code")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    leaf = got["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf["kind"] == "note" and leaf["text"] == "criterion with no agreed code"
+    assert page.get_by_text("NOT deterministically compilable").is_visible()
+
+
+def test_codes_prescribing_bnf_and_drug_names(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 1, "prescribing")   # Source
+    dlg.get_by_role("textbox", name="BNF").fill("0601")
+    dlg.get_by_role("textbox", name="Drug names").fill("metformin")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf["source"] == "prescribing"
+    assert leaf["bnf"] == ["0601"] and leaf["drug_names"] == ["metformin"]
+
+
+def test_measure_op_change(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 0, "measure")   # Kind
+    dlg = pick(page, dlg, 3, "<")                                # Op (Kind,Source,Measure,Op)
+    dlg.get_by_role("textbox", name="Value").fill("60")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf["op"] == "<" and leaf["value"] == 60
+
+
+def test_anchor_occurrence_direction_unit(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="ICD-10").fill("E11")
+    dlg.get_by_text("⏱ Timing (optional)").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("Anchor to a per-patient index event").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill("X1")
+    dlg.get_by_text("last occurrence", exact=True).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("after the index date", exact=True).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Within N (blank = any time)").fill("2")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 4, "years")   # Unit select
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    anchor = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]["when"]["anchor"]
+    assert anchor["event"]["occurrence"] == "last"
+    assert anchor["direction"] == "after"
+    assert anchor["within"] == {"n": 2, "unit": "years"}

@@ -283,21 +283,30 @@ def body_html(n):
 def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=False):
     is_c = n.get("node") == "container"
     with st.container(border=True):
-        cols = st.columns([8, 0.6, 0.6, 0.6, 0.6, 0.6])
+        # exactly the needed action columns, so buttons pack flush to the
+        # card's right edge on every row (no phantom empty slots)
+        n_btn = (1 if is_c else 0) + 1 + (0 if is_root else 1) + (2 if (is_excl and top) else 0)
+        cols = st.columns([10 - 0.62 * n_btn] + [0.62] * n_btn)
         cols[0].markdown(header_html(n), unsafe_allow_html=True)
+        i = 1
         # ➕ lives on the CONTAINER's own header, so it is unambiguous which
         # container you add into
-        if is_c and cols[1].button("➕", key=f"a{n['_id']}",
-                                   help="add a condition or sub-container into THIS container"):
-            open_modal("add_to", {}, container=n["_id"])
-        if cols[2].button("✎", key=f"e{n['_id']}", help="edit"):
+        if is_c:
+            if cols[i].button("➕", key=f"a{n['_id']}",
+                              help="add a condition or sub-container into THIS container"):
+                open_modal("add_to", {}, container=n["_id"])
+            i += 1
+        if cols[i].button("✎", key=f"e{n['_id']}", help="edit"):
             open_modal("edit_container" if is_c else "edit_leaf", n, id=n["_id"])
-        if not is_root and cols[3].button("✕", key=f"x{n['_id']}", help="remove"):
-            remove_node(g, n["_id"]); st.rerun()
+        i += 1
+        if not is_root:
+            if cols[i].button("✕", key=f"x{n['_id']}", help="remove"):
+                remove_node(g, n["_id"]); st.rerun()
+            i += 1
         if is_excl and top:
-            if cols[4].button("↑", key=f"u{n['_id']}") and idx > 0:
+            if cols[i].button("↑", key=f"u{n['_id']}", help="subtract earlier") and idx > 0:
                 sib[idx - 1], sib[idx] = sib[idx], sib[idx - 1]; st.rerun()
-            if cols[5].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
+            if cols[i + 1].button("↓", key=f"d{n['_id']}", help="subtract later") and idx < len(sib) - 1:
                 sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
 
         if is_c:
