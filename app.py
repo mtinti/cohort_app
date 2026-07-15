@@ -26,6 +26,8 @@ CSS = """
 <style>
 /* higher-contrast body text */
 .stApp, .stMarkdown p, .stMarkdown span, label, .stRadio, .stTextInput { color: #14161c; }
+/* anchor links (#group-name …) must not scroll the heading under the fixed header */
+h1, h2, h3, h4 { scroll-margin-top: 4.5rem; }
 /* high-contrast inline code tags  ([codes], [demographic] …) */
 .stMarkdown code {
   background: #e6e9f0 !important;
