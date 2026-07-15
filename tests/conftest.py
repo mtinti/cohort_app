@@ -64,6 +64,50 @@ def page(app_server, _browser):
     ctx.close()
 
 
+# --- second server with the samples/biobank UI flag ON -----------------------
+PORT_FLAG = int(os.environ.get("APP_TEST_PORT_FLAG", "8798"))
+URL_FLAG = f"http://localhost:{PORT_FLAG}/"
+
+
+@pytest.fixture(scope="session")
+def app_server_flag():
+    subprocess.run(["pkill", "-f", f"--server.port {PORT_FLAG}"], capture_output=True)
+    proc = subprocess.Popen(
+        ["streamlit", "run", "app.py", "--server.headless", "true",
+         "--server.port", str(PORT_FLAG), "--browser.gatherUsageStats", "false"],
+        cwd=ROOT, stdout=open("/tmp/streamlit_test_flag.log", "w"),
+        stderr=subprocess.STDOUT,
+        env={**os.environ, "COHORT_ENABLE_SAMPLES": "1"},
+    )
+    try:
+        for _ in range(60):
+            try:
+                urllib.request.urlopen(URL_FLAG, timeout=1)
+                break
+            except Exception:
+                time.sleep(0.5)
+        else:
+            raise RuntimeError("flag server did not start; see /tmp/streamlit_test_flag.log")
+        yield URL_FLAG
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            proc.kill()
+
+
+@pytest.fixture()
+def page_flag(app_server_flag, _browser):
+    ctx = _browser.new_context(accept_downloads=True, viewport={"width": 1500, "height": 1200})
+    pg = ctx.new_page()
+    pg.goto(app_server_flag, wait_until="domcontentloaded")
+    pg.wait_for_selector("[data-testid='stAppViewContainer']", timeout=30000)
+    settle(pg)
+    yield pg
+    ctx.close()
+
+
 def settle(pg, ms=1200):
     """Wait for Streamlit to finish a rerun."""
     try:

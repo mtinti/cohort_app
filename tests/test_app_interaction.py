@@ -211,3 +211,230 @@ def test_vocab_fields_follow_source(page):
     got = download_yaml(page)
     leaf = got["cohorts"][0]["inclusion"]["members"][1]["members"][0]
     assert leaf["source"] == "prescribing" and "icd" not in leaf
+
+
+# ---------------------------------------------------------------------------
+# Dialog editing — every kind, timing, container ops, remove/cancel
+# ---------------------------------------------------------------------------
+def pick(page, dlg, nth, option):
+    """Choose `option` in the nth baseweb selectbox of the dialog."""
+    dlg.locator("[data-baseweb='select']").nth(nth).click()
+    settle(page, 400)
+    page.get_by_role("option", name=option, exact=True).click()
+    settle(page)
+    return page.get_by_role("dialog")
+
+
+def test_kind_options_exclude_sample_by_default(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.locator("[data-baseweb='select']").nth(0).click()      # Kind
+    settle(page, 400)
+    opts = [o.inner_text() for o in page.get_by_role("option").all()]
+    assert opts == ["demographic", "codes", "measure", "note"]
+    page.keyboard.press("Escape")
+
+
+def test_edit_demographic_leaf(page):
+    page.get_by_role("button", name="✎").nth(1).click()        # 'Adults'
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Age max").fill("70")
+    dlg.get_by_text("female", exact=True).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][0]
+    assert leaf["age_max"] == 70 and leaf["sex"] == "female"
+
+
+def test_edit_container_op(page):
+    page.get_by_role("button", name="✎").nth(2).click()        # OR 'Condition of interest'
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("INTERSECT — all of (AND)").click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    assert got["cohorts"][0]["inclusion"]["members"][1]["op"] == "AND"
+
+
+def test_remove_condition(page):
+    before = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
+    page.get_by_role("button", name="✕").first.click()         # 'Adults'
+    settle(page)
+    after = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
+    assert len(after) == len(before) - 1
+    assert all(m.get("kind") != "demographic" for m in after)
+
+
+def test_cancel_keeps_state(page):
+    before = download_yaml(page)
+    page.get_by_role("button", name="✎").nth(1).click()        # 'Adults'
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Label").fill("changed label")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+    settle(page)
+    assert download_yaml(page) == before
+
+
+def test_add_measure_condition(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 0, "measure")  # Kind -> measure
+    dlg.get_by_role("textbox", name="Value").fill("48")
+    dlg.get_by_role("textbox", name="Unit").fill("mmol/mol")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    leaf = got["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf == {"id": leaf["id"], "kind": "measure", "source": "lab_results",
+                    "measure": "hba1c", "op": ">=", "value": 48, "unit": "mmol/mol"}
+    assert S.check_contract(got) == []
+
+
+def test_codes_window_timing(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="ICD-10").fill("E11")
+    dlg.get_by_text("⏱ Timing (optional)").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Window from (YYYY-MM-DD)").fill("2019-01-01")
+    dlg.get_by_role("textbox", name="Window to (YYYY-MM-DD)").fill("2020-12-31")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    leaf = got["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf["when"]["window"] == {"from": "2019-01-01", "to": "2020-12-31"}
+    assert S.check_contract(got) == []
+
+
+def test_codes_anchor_timing(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="ICD-10").fill("E11")
+    dlg.get_by_text("⏱ Timing (optional)").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("Anchor to a per-patient index event").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill("X1")
+    dlg.get_by_role("textbox", name="Within N (blank = any time)").fill("6")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    anchor = got["cohorts"][0]["inclusion"]["members"][-1]["when"]["anchor"]
+    assert anchor["event"]["source"] == "hospital_admissions"   # first anchor source
+    assert anchor["event"]["vocab"] == "icd10"
+    assert anchor["event"]["codes"] == ["X1"]
+    assert anchor["direction"] == "before"
+    assert anchor["within"] == {"n": 6, "unit": "months"}
+    assert S.check_contract(got) == []
+
+
+# ---------------------------------------------------------------------------
+# Group management + validation banners
+# ---------------------------------------------------------------------------
+def test_duplicate_group_name_flagged(page):
+    other = download_yaml(page)["cohorts"][1]["name"]
+    page.get_by_role("textbox", name="Group name").fill(other)
+    page.keyboard.press("Tab")
+    settle(page)
+    assert page.get_by_text("used more than once").is_visible()
+
+
+def test_remove_group_and_disabled_at_one(page):
+    assert len(download_yaml(page)["cohorts"]) == 2
+    page.get_by_role("button", name=re.compile("Remove")).click()
+    settle(page)
+    assert len(download_yaml(page)["cohorts"]) == 1
+    assert page.get_by_role("button", name=re.compile("Remove")).is_disabled()
+
+
+def test_notes_banner_then_compilable_after_removal(page):
+    # the example contains a `note` exclusion -> flagged not compilable
+    assert page.get_by_text("NOT deterministically compilable").is_visible()
+    # remove the note (the last ✕ inside the exclusions of group A)
+    row = page.locator("[data-testid='stHorizontalBlock']").filter(
+        has_text="Other criterion (no code yet)").last
+    row.get_by_role("button", name="✕").click()
+    settle(page)
+    assert page.get_by_text("✓ ready").is_visible()
+    assert page.get_by_text("deterministically compilable").is_visible()
+    assert S.notes_in(download_yaml(page)) == []
+
+
+def test_registry_warning_for_unknown_source(page, tmp_path):
+    c = {"project": "p", "project_type": "recruitment", "target_n": "",
+         "schema_version": S.SCHEMA_VERSION,
+         "cohorts": [{"id": "g1", "name": "G", "exclusions": [], "inclusion": {
+             "id": "c1", "op": "AND", "members": [
+                 {"id": "l1", "kind": "codes", "label": "x",
+                  "source": "mystery_db", "icd": ["A00"]}]}}]}
+    f = tmp_path / "unknown_source.yaml"
+    f.write_text(yaml.dump(c))
+    page.get_by_text("Load a requirement.yaml").click()
+    settle(page)
+    page.locator("input[type='file']").set_input_files(str(f))
+    settle(page)
+    # passes the structural gate, but level-2 registry conformance warns
+    assert page.get_by_text("passes the strict contract gate").is_visible()
+    assert page.get_by_text("Registry conformance:").is_visible()
+    assert page.get_by_text("not in the registry").is_visible()
+
+
+def test_draft_coercions_reported_on_load(page, tmp_path):
+    c = {"project": "p", "project_type": "recruitment",
+         "schema_version": S.SCHEMA_VERSION,
+         "cohorts": [{"id": "g1", "name": "G", "exclusions": [], "inclusion": {
+             "id": "c1", "op": "AND", "members": [
+                 {"id": "l1", "kind": "demographic", "sex": "both",
+                  "age_min": 18}]}}]}
+    f = tmp_path / "legacy_sex.yaml"
+    f.write_text(yaml.dump(c))
+    page.get_by_text("Load a requirement.yaml").click()
+    settle(page)
+    page.locator("input[type='file']").set_input_files(str(f))
+    settle(page)
+    assert page.get_by_text("does not pass the strict contract gate").is_visible()
+    assert page.get_by_text("legacy sex 'both'").is_visible()   # coercion reported
+    assert download_yaml(page)["cohorts"][0]["inclusion"]["members"][0].get("sex") is None
+
+
+def test_contract_header_references_export(page):
+    page.get_by_text("📜 Contract header").click()
+    settle(page)
+    page.get_by_role("textbox", name="Extraction spec URI (optional)").fill(
+        "https://example.org/extraction-spec")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("button", name=re.compile("Seal as agreed")).click()
+    settle(page)
+    got = download_yaml(page)
+    assert got["contract"]["references"] == {
+        "extraction_spec": "https://example.org/extraction-spec"}
+    assert got["contract"]["status"] == "agreed"
+    assert S.check_contract(got) == []
