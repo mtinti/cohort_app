@@ -696,3 +696,51 @@ def test_anchor_occurrence_direction_unit(page):
     assert anchor["event"]["occurrence"] == "last"
     assert anchor["direction"] == "after"
     assert anchor["within"] == {"n": 2, "unit": "years"}
+
+
+def test_seal_download_tamper_upload_cycle(page, tmp_path):
+    # 1. seal the contract in the app
+    page.get_by_text("📜 Contract header").click()
+    settle(page)
+    page.get_by_role("button", name=re.compile("Seal as agreed")).click()
+    settle(page)
+    with page.expect_download() as di:
+        page.get_by_role("button", name="Download YAML").click()
+    sealed = yaml.safe_load(open(di.value.path()))
+    assert sealed["contract"]["status"] == "agreed"
+
+    # 2. upload the UNMODIFIED download -> passes the strict gate
+    clean = tmp_path / "sealed.requirement.yaml"
+    clean.write_bytes(open(di.value.path(), "rb").read())
+    page.get_by_text("Load a requirement.yaml").click()
+    settle(page)
+    page.locator("input[type='file']").set_input_files(str(clean))
+    settle(page)
+    assert page.get_by_text("passes the strict contract gate").is_visible()
+
+    # 3. tamper with the BODY offline (change one code), keep the header
+    tampered = yaml.safe_load(open(di.value.path()))
+    leaf = tampered["cohorts"][0]["inclusion"]["members"][1]["members"][0]
+    leaf["icd"] = ["Z99"]                       # was A00
+    bad = tmp_path / "tampered.requirement.yaml"
+    bad.write_text(yaml.dump(tampered, sort_keys=False, allow_unicode=True))
+
+    # 4. upload the tampered file -> gate rejects it, loudly
+    page.locator("input[type='file']").set_input_files(str(bad))
+    settle(page)
+    assert page.get_by_text("does not pass the strict contract gate").is_visible()
+    assert page.get_by_text("CHANGED since it was sealed").is_visible()
+
+    # 5. re-sealing in the app re-approves the changed body (version bump).
+    # The expander auto-opens when a header exists — only click it if closed.
+    seal_btn = page.get_by_role("button", name=re.compile("Seal as agreed"))
+    if not seal_btn.is_visible():
+        page.get_by_text("📜 Contract header").click()
+        settle(page)
+    seal_btn.click()
+    settle(page)
+    got = download_yaml(page)
+    assert got["contract"]["version"] == sealed["contract"]["version"] + 1
+    assert S.hash_status(got) == "ok"
+    assert S.check_contract(got) == []
+    assert got["cohorts"][0]["inclusion"]["members"][1]["members"][0]["icd"] == ["Z99"]
