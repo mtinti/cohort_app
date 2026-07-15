@@ -1,0 +1,52 @@
+# ============================================================================
+# Site binding — PHYSICAL mapping only (site A).
+# Maps logical registry sources (sources.yaml) to this site's local tables and
+# columns. A binding can never change matching semantics — those are
+# registry-owned — so two sites executing the same contract select the same
+# patients by construction. Written once per site, reused for every contract.
+# ============================================================================
+binding_version: 1
+site: site-a
+sources:
+  demographics:
+    table: demog
+    catalogue: Demography
+    patient_id_column: patient_id
+    columns: {age: age, sex: sex}
+  hospital_admissions:
+    table: hosp_admissions
+    catalogue: HospitalAdmissions
+    patient_id_column: patient_id
+    date_column: admit_date
+    code_columns: {icd10: icd_code}
+  gp_events:
+    table: gp_events
+    catalogue: GPEvents
+    patient_id_column: patient_id
+    date_column: event_date
+    code_columns: {read: read_code}
+  prescribing:
+    table: rx
+    catalogue: Prescribing
+    patient_id_column: patient_id
+    date_column: rx_date
+    code_columns: {bnf: bnf_code, drug_name: drug}
+  deaths:
+    table: deaths
+    catalogue: Deaths
+    patient_id_column: patient_id
+    date_column: death_date
+    code_columns: {icd10: cause_code}
+  lab_results:
+    table: labs
+    catalogue: LabResults
+    patient_id_column: patient_id
+    date_column: test_date
+    measures:
+      hba1c: {filter_column: test_code, filter_value: HBA1C, value_column: result}
+      egfr: {filter_column: test_code, filter_value: EGFR, value_column: result}
+  biobank_samples:
+    table: samples
+    catalogue: BiobankSamples
+    patient_id_column: patient_id
+    date_column: sample_date

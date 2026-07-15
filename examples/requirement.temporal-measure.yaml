@@ -1,0 +1,50 @@
+# ============================================================================
+# FIXTURE contract — temporal anchor + measure threshold
+# One of the step-0 representative requirements (plan.md §4). Passes the
+# strict gate + registry conformance, and compiles against both example site
+# bindings; the compiler tests assert both sites select the SAME patients on
+# identically-seeded synthetic data.
+# ============================================================================
+project: 'Fixture: temporal + threshold criteria'
+project_type: registry
+target_n: all eligible
+schema_version: 2
+cohorts:
+- id: bb32f212
+  name: Anchored threshold cohort
+  inclusion:
+    id: 1e5a16be
+    op: AND
+    members:
+    - id: 6796aad5
+      kind: measure
+      label: Raised HbA1c in 2019
+      source: lab_results
+      measure: hba1c
+      op: '>='
+      value: 48
+      unit: mmol/mol
+      when:
+        window:
+          from: '2019-01-01'
+          to: '2019-12-31'
+    - id: a8aaea06
+      kind: codes
+      label: BNF ch.6 medicine before first diagnosis
+      source: prescribing
+      bnf:
+      - '06'
+      when:
+        anchor:
+          event:
+            source: gp_events
+            vocab: read
+            codes:
+            - X1111
+            occurrence: first
+            label: first recorded diagnosis
+          direction: before
+          within:
+            n: 6
+            unit: months
+  exclusions: []

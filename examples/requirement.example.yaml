@@ -5,115 +5,116 @@
 #   each GROUP is self-contained. inclusion is a CONTAINER combined with
 #   op: AND (INTERSECT, all of) or OR (UNION, any of), and may nest. exclusions
 #   are an ORDERED list removed in turn.
-#   Leaf condition kinds: demographic / codes / note (+ sample when the
-#   COHORT_ENABLE_SAMPLES UI flag is on — the schema accepts it everywhere).
-# Codes are verbatim; `source` names the dataset the codes apply to.
+#   Leaf condition kinds: demographic / codes / measure / note (+ sample; the
+#   COHORT_ENABLE_SAMPLES flag only gates the UI — the schema accepts it
+#   everywhere).
+# `source` names a LOGICAL source from sources.yaml (the registry); codes are
+# verbatim; matching semantics (prefix, ranges) are registry-defined, so every
+# site executing this contract selects the same patients.
 # Every group/container/condition carries a persistent `id` so criteria stay
 # addressable across versions (diffs, review comments, feasibility errors).
-# This file passes the strict contract gate (check_contract == []).
+# This file passes the strict contract gate (check_contract == []) and
+# registry conformance (check_sources == []).
 # ============================================================================
 
 project: Example cohort request (edit me)
 project_type: recruitment
 target_n: approx. N per group
-schema_version: 1
+schema_version: 2
 cohorts:
-- id: 846634d9
+- id: cd2d21d9
   name: Group A — cases
   inclusion:
-    id: 6f1bab3f
+    id: 87e45a57
     op: AND
     members:
-    - id: 6c5042f7
+    - id: 928daa71
       kind: demographic
       label: Adults
-      source: Demographics
+      source: demographics
       age_min: 18
       age_max: 80
-      sex: both
-    - id: f8797474
+    - id: f57f0f18
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: e7fcceca
+      - id: f0550bc7
         kind: codes
         label: Condition in hospital data
-        source: hospital
+        source: hospital_admissions
         icd:
         - A00
-      - id: c0f5711c
+      - id: 0b81993c
         kind: codes
         label: Condition in primary care
-        source: primary_care
+        source: gp_events
         read:
         - X1111
-    - id: e6f49540
+    - id: 2510ba25
       op: OR
       label: A second condition (placeholder)
       members:
-      - id: c9dc01bd
+      - id: aa61be82
         kind: codes
         label: Second condition (primary care)
-        source: primary_care
+        source: gp_events
         read:
         - X2222
-      - id: a5228364
+      - id: 4ad90d2f
         kind: codes
         label: Second condition (hospital)
-        source: hospital
+        source: hospital_admissions
         icd:
         - A01
   exclusions:
-  - id: 1ebe6893
+  - id: 58f16a58
     kind: codes
     label: Comorbidity to exclude
-    source: hospital
+    source: hospital_admissions
     icd:
     - B00
-  - id: 89b3767b
+  - id: f83a98f0
     kind: note
     label: Other criterion (no code yet)
     text: Describe any criterion that has no agreed code.
-- id: 2ee31e52
+- id: ab295a31
   name: Group B — controls
   inclusion:
-    id: 86cacfd8
+    id: a4a58a20
     op: AND
     members:
-    - id: '96937968'
+    - id: 67096de2
       kind: demographic
       label: Adults
-      source: Demographics
+      source: demographics
       age_min: 18
       age_max: 80
-      sex: both
-    - id: 229fe209
+    - id: 8f2b2946
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: d63db0e8
+      - id: c1c7ee58
         kind: codes
         label: Condition in hospital data
-        source: hospital
+        source: hospital_admissions
         icd:
         - A00
-      - id: cc267eb4
+      - id: 6588637a
         kind: codes
         label: Condition in primary care
-        source: primary_care
+        source: gp_events
         read:
         - X1111
   exclusions:
-  - id: 32f14fbf
+  - id: d6d8b873
     kind: codes
     label: Exclude a condition variant
-    source: primary_care
+    source: gp_events
     read:
     - X3333
-  - id: a2bdb1df
+  - id: 29dc55a6
     kind: codes
     label: Comorbidity to exclude
-    source: hospital
+    source: hospital_admissions
     icd:
     - B00
-

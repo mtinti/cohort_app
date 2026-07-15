@@ -239,6 +239,14 @@ in-site execution, all deterministic and reproducible.
 
 ## 4. Implementation order
 
+**Status 2026-07-15: steps 0–6 are implemented on the `contract-foundations`
+branch** (schema v2). Fixtures are synthetic placeholders pending real
+requirements (step 0 should be re-done with 2–3 real, anonymised requests).
+Notable scope choices: `residence`/`simd` stay in the schema but fail
+feasibility (not yet compilable); sample events of type `lab_result` are not
+compilable (free-text vocabulary); cross-letter ICD ranges (`C00-D48`) are
+rejected rather than expanded.
+
 | # | Step | Where | Size | Value |
 |---|------|-------|------|-------|
 | 0 | Collect 2–3 representative real requirements as fixture files; define the deliberately narrow executable subset they need | this repo | S | keeps every schema decision honest (review suggestion, adopted) |

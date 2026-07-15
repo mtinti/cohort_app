@@ -71,13 +71,14 @@ def test_add_inclusion_button(page):
     page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
     settle(page)
     dlg = page.get_by_role("dialog")
-    dlg.get_by_role("textbox", name="Source / dataset").fill("DS")
+    # source is now a registry dropdown (default = first codes-capable source)
     dlg.get_by_role("textbox", name="ICD-10").fill("Z01")
     page.keyboard.press("Tab"); settle(page)
     dlg.get_by_role("button", name="Save").click(); settle(page)
     after = download_yaml(page)["cohorts"][0]["inclusion"]["members"]
     assert len(after) == before + 1
-    assert any(m.get("source") == "DS" and m.get("icd") == ["Z01"] for m in after)
+    assert any(m.get("source") == "hospital_admissions" and m.get("icd") == ["Z01"]
+               for m in after)
 
 
 def test_add_subgroup_via_container_button(page):
@@ -98,7 +99,6 @@ def test_add_exclusion_via_dialog(page):
     settle(page)
     dlg = page.get_by_role("dialog")
     dlg.get_by_role("textbox", name="Label").fill("Test exclusion")
-    dlg.get_by_role("textbox", name="Source / dataset").fill("TEST_CAT")
     dlg.get_by_role("textbox", name="ICD-10").fill("Z99")
     page.keyboard.press("Tab")
     settle(page)
@@ -106,7 +106,8 @@ def test_add_exclusion_via_dialog(page):
     settle(page)
     got = download_yaml(page)
     excls = got["cohorts"][0]["exclusions"]
-    assert any(e.get("source") == "TEST_CAT" and e.get("icd") == ["Z99"] for e in excls)
+    assert any(e.get("label") == "Test exclusion" and e.get("icd") == ["Z99"]
+               for e in excls)
 
 
 def test_add_exclusion_container_via_dialog(page):
@@ -157,3 +158,26 @@ def test_blank_requirement_shows_validation(page):
     assert page.get_by_text("Not ready").is_visible()
     got = download_yaml(page)
     assert got["project"] == ""
+
+
+def test_seal_contract_flow(page):
+    page.get_by_text("📜 Contract header").click()      # open the expander
+    settle(page)
+    page.get_by_role("button", name=re.compile("Seal as agreed")).click()
+    settle(page)
+    assert page.get_by_text("hash ✓ body unchanged since sealing").is_visible()
+    got = download_yaml(page)
+    assert got["contract"]["status"] == "agreed"
+    assert S.hash_status(got) == "ok"
+    assert S.check_contract(got) == []
+    # editing the body after sealing is detected (the sidebar banner refreshes
+    # on the NEXT rerun — it renders before the main-area edit lands, so
+    # trigger one more rerun via a second edit)
+    page.get_by_role("textbox", name="Group name").fill("Tampered name")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("textbox", name="Target N").fill("999")
+    page.keyboard.press("Tab")
+    settle(page)
+    assert page.get_by_text("body CHANGED since sealing").is_visible()
+    assert S.hash_status(download_yaml(page)) == "changed"

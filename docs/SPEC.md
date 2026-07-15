@@ -11,8 +11,16 @@
 > (demographic / codes / note). Everything else (groups, INTERSECT/UNION
 > containers, ordered exclusions, load / clone / preview) is shared by both.
 
-**Status:** draft v2.1 (2026-07-15) — adds persistent `id`s, one-schema-for-all-
-environments, and draft-vs-strict loading (see `plan.md`)
+**Status:** draft v2.2 (2026-07-15) — schema v2: adds persistent `id`s,
+one-schema-for-all-environments, draft-vs-strict loading, the **logical source
+registry** (`sources.yaml` — `source` values are registry names, matching
+semantics are registry-normative), the **`measure` kind** (value thresholds),
+optional **`when` timing** on codes/measure leaves (absolute window and/or a
+per-patient index-event **anchor** — the generalisation of §5.5), a **typed
+`within`** (`{n, unit}`), a **sex enum** (any/female/male), and the optional
+**`contract` header** (id/version/status/parties/`body_sha256` canonical body
+hash, sealed via the app). Compilation artifacts live in `compiler/`
+(site bindings, feasibility, SQL + RDMP emitters) — see `plan.md`.
 **Decisions locked:** Streamlit (Python) · structured-form-only · download-YAML-only ·
 each group **self-contained** (one group = one complete RDMP build) ·
 inclusion **container** + **ordered** exclusions (researcher-ordered subtraction) ·

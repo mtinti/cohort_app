@@ -1,0 +1,50 @@
+# ============================================================================
+# Site binding — PHYSICAL mapping only (site B).
+# Same logical sources as site A, entirely different local naming — the point
+# of the design: the contract never changes, only this file differs per site.
+# ============================================================================
+binding_version: 1
+site: site-b
+sources:
+  demographics:
+    table: person
+    catalogue: SITEB_Person
+    patient_id_column: chi
+    columns: {age: age_years, sex: gender}
+  hospital_admissions:
+    table: smr01
+    catalogue: SITEB_SMR01
+    patient_id_column: chi
+    date_column: admission_date
+    code_columns: {icd10: main_condition}
+  gp_events:
+    table: gp
+    catalogue: SITEB_GP
+    patient_id_column: chi
+    date_column: gp_date
+    code_columns: {read: readcode}
+  prescribing:
+    table: meds
+    catalogue: SITEB_Meds
+    patient_id_column: chi
+    date_column: disp_date
+    code_columns: {bnf: bnf, drug_name: drug_name}
+  deaths:
+    table: mortality
+    catalogue: SITEB_Mortality
+    patient_id_column: chi
+    date_column: dod
+    code_columns: {icd10: cause}
+  lab_results:
+    table: biochem
+    catalogue: SITEB_Biochem
+    patient_id_column: chi
+    date_column: sample_dt
+    measures:
+      hba1c: {filter_column: test, filter_value: HBA1C, value_column: val}
+      egfr: {filter_column: test, filter_value: EGFR, value_column: val}
+  biobank_samples:
+    table: bio_samples
+    catalogue: SITEB_Samples
+    patient_id_column: chi
+    date_column: dt

@@ -1,0 +1,76 @@
+# ============================================================================
+# FIXTURE contract — two-group case-control
+# One of the step-0 representative requirements (plan.md §4). Passes the
+# strict gate + registry conformance, and compiles against both example site
+# bindings; the compiler tests assert both sites select the SAME patients on
+# identically-seeded synthetic data.
+# ============================================================================
+project: 'Fixture: case-control study'
+project_type: registry
+target_n: all eligible
+schema_version: 2
+cohorts:
+- id: 65080a14
+  name: Cases
+  inclusion:
+    id: 9a957e42
+    op: AND
+    members:
+    - id: d6e1b524
+      kind: demographic
+      label: Adults
+      source: demographics
+      age_min: 18
+      age_max: 80
+    - id: 77f67461
+      op: OR
+      label: Condition of interest (any source)
+      members:
+      - id: eea94872
+        kind: codes
+        label: Condition in hospital data
+        source: hospital_admissions
+        icd:
+        - A00
+      - id: 8f313f0b
+        kind: codes
+        label: Condition in primary care
+        source: gp_events
+        read:
+        - X1111
+  exclusions:
+  - id: 07eac5fb
+    kind: codes
+    label: Comorbidity to exclude
+    source: hospital_admissions
+    icd:
+    - B00
+- id: 9257bf13
+  name: Controls
+  inclusion:
+    id: 1a1415e6
+    op: AND
+    members:
+    - id: 0f2e00f7
+      kind: demographic
+      label: Adults
+      source: demographics
+      age_min: 18
+      age_max: 80
+  exclusions:
+  - id: 1bd78eb8
+    op: OR
+    label: Condition of interest (any source)
+    members:
+    - id: f2b6de8a
+      kind: codes
+      label: Condition in hospital data
+      source: hospital_admissions
+      icd:
+      - A00
+    - id: cd439a1e
+      kind: codes
+      label: Condition in primary care
+      source: gp_events
+      read:
+      - X1111

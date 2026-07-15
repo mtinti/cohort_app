@@ -12,6 +12,7 @@ import copy
 import yaml
 import streamlit as st
 
+import registry as R
 import requirement_schema as S
 
 st.set_page_config(page_title="Health Cohort Builder", layout="wide")
@@ -161,6 +162,21 @@ def _esc(s):
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _when_txt(n):
+    w = n.get("when") or {}
+    bits = []
+    win = w.get("window") or {}
+    if win.get("from") or win.get("to"):
+        bits.append(f"window {_esc(win.get('from', '…'))}→{_esc(win.get('to', '…'))}")
+    a = w.get("anchor")
+    if a:
+        wi = a.get("within") or {}
+        within = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
+        bits.append(f"{a.get('direction', '?')} {a.get('event', {}).get('occurrence', 'first')} "
+                    f"{_esc(a.get('event', {}).get('source', '?'))} event{within}")
+    return (" · ⏱ " + "; ".join(bits)) if bits else ""
+
+
 def summary_html(n):
     if n.get("node") == "container":
         op = n["op"]
@@ -173,11 +189,17 @@ def summary_html(n):
     if k == "codes":
         vocs = [f"{f.upper().replace('_', ' ')} {_esc(', '.join(n[f]))}"
                 for f in ("icd", "read", "bnf", "drug_names") if n.get(f)]
-        return tag + f"{lbl} — {_esc(n.get('source', '?'))} · " + " · ".join(vocs)
+        return tag + f"{lbl} — {_esc(n.get('source', '?'))} · " + " · ".join(vocs) + _when_txt(n)
+    if k == "measure":
+        return tag + (f"{lbl} — {_esc(n.get('source', '?'))} · {_esc(n.get('measure', '?'))} "
+                      f"{_esc(n.get('op', '?'))} {_s(n.get('value'))} {_esc(n.get('unit', ''))}"
+                      + _when_txt(n))
     if k == "demographic":
         bits = []
         if n.get("age_min") is not None or n.get("age_max") is not None:
             bits.append(f"age {_s(n.get('age_min'))}–{_s(n.get('age_max'))}")
+        if n.get("sex") and n["sex"] != "any":
+            bits.append(_esc(n["sex"]))
         if n.get("residence"):
             bits.append(_esc(n["residence"]))
         if n.get("simd"):
@@ -186,7 +208,8 @@ def summary_html(n):
     if k == "sample":
         se = n["sample_event"]
         ev = se["event"]
-        w = f" within {_esc(se['within'])}" if se.get("within") else ""
+        wi = se.get("within") or {}
+        w = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
         return tag + (f"{lbl} — ≥1 sample {se['direction']} "
                       f"{ev['occurrence']} {_esc(ev['type'])} index{w}")
     return tag + lbl
@@ -257,6 +280,58 @@ def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=Fa
 
 
 # ----------------------------- dialogs -------------------------------------
+def _source_select(work, kind, label="Source (logical, from the registry)"):
+    opts = R.sources_for(kind)
+    cur = work.get("source", "")
+    if cur and cur not in opts:          # loaded value the registry doesn't know
+        opts = [cur] + opts
+        st.warning(f"source '{cur}' is not in the registry — pick a logical source")
+    work["source"] = st.selectbox(label, opts, index=opts.index(cur) if cur in opts else 0)
+    desc = R.SOURCES.get(work["source"], {}).get("description")
+    if desc:
+        st.caption(desc)
+
+
+def _timing_editor(work):
+    w = work.get("when") or {}
+    with st.expander("⏱ Timing (optional)", expanded=bool(w.get("window") or w.get("anchor"))):
+        win = dict(w.get("window") or {})
+        c = st.columns(2)
+        f = c[0].text_input("Window from (YYYY-MM-DD)", win.get("from", ""))
+        t = c[1].text_input("Window to (YYYY-MM-DD)", win.get("to", ""))
+        window = {}
+        if f.strip():
+            window["from"] = f.strip()
+        if t.strip():
+            window["to"] = t.strip()
+        anchor = None
+        if st.checkbox("Anchor to a per-patient index event", value=bool(w.get("anchor"))):
+            a = w.get("anchor") or {}
+            ev = a.get("event") or {}
+            srcs = R.sources_for("anchor")
+            src = st.selectbox("Index event source", srcs,
+                               index=srcs.index(ev["source"]) if ev.get("source") in srcs else 0)
+            vocabs = R.vocabs_for(src) or [""]
+            vocab = st.selectbox("Event vocabulary", vocabs,
+                                 index=vocabs.index(ev["vocab"]) if ev.get("vocab") in vocabs else 0)
+            occ = st.radio("Index date is the", S.OCCURRENCE,
+                           index=S.OCCURRENCE.index(ev.get("occurrence", "first")),
+                           horizontal=True, format_func=lambda o: f"{o} occurrence")
+            codes = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=70))
+            direction = st.radio("This condition happens", S.DIRECTION,
+                                 index=S.DIRECTION.index(a.get("direction", "before")),
+                                 horizontal=True, format_func=lambda d: f"{d} the index date")
+            wi = a.get("within") or {}
+            cw = st.columns(2)
+            n = _int(cw[0].text_input("Within N (blank = any time)", _s(wi.get("n"))))
+            unit = cw[1].selectbox("Unit", S.WITHIN_UNITS,
+                                   index=S.WITHIN_UNITS.index(wi.get("unit", "months")))
+            anchor = {"event": {"source": src, "vocab": vocab, "codes": codes,
+                                "occurrence": occ, "label": ev.get("label", "")},
+                      "direction": direction, "within": {"n": n, "unit": unit}}
+        work["when"] = {"window": window, "anchor": anchor} if (window or anchor) else None
+
+
 @st.dialog("Condition")
 def leaf_dialog():
     work = st.session_state.work
@@ -273,23 +348,48 @@ def leaf_dialog():
     k = work["kind"]
 
     if k == "demographic":
-        work["source"] = st.text_input("Source / dataset", work.get("source", "Demographics"))
+        _source_select(work, "demographic")
         c = st.columns(2)
         work["age_min"] = _int(c[0].text_input("Age min", _s(work.get("age_min"))))
         work["age_max"] = _int(c[1].text_input("Age max", _s(work.get("age_max"))))
-        work["sex"] = st.text_input("Sex", work.get("sex", "both"))
+        sex = work.get("sex") if work.get("sex") in S.SEXES else "any"
+        work["sex"] = st.radio("Sex", S.SEXES, index=S.SEXES.index(sex), horizontal=True)
         work["residence"] = st.text_input("Residence", work.get("residence", ""))
         work["simd"] = st.text_input("SIMD", work.get("simd", ""))
+        if work.get("residence") or work.get("simd"):
+            st.caption("⚠ residence/SIMD are free text — recorded in the contract but "
+                       "not yet compilable (they will fail site feasibility)")
     elif k == "codes":
-        work["source"] = st.text_input("Source / dataset", work.get("source", ""),
-                                       placeholder="e.g. hospital, primary_care, prescriptions")
-        c = st.columns(2)
-        work["icd"] = _lines(c[0].text_area("ICD-10", _join(work.get("icd")), height=90))
-        work["read"] = _lines(c[1].text_area("READ", _join(work.get("read")), height=90))
-        c2 = st.columns(2)
-        work["bnf"] = _lines(c2[0].text_area("BNF", _join(work.get("bnf")), height=90))
-        work["drug_names"] = _lines(c2[1].text_area("Drug names", _join(work.get("drug_names")), height=90))
-        st.caption("one code/range per line · e.g. E11, F00-09, C00-D48, 6.1-6.6")
+        _source_select(work, "codes")
+        legal = R.vocabs_for(work["source"])
+        fields = [(f, v) for f, v in R.VOCAB_FIELDS.items() if v in legal or work.get(f)]
+        labels = {"icd": "ICD-10", "read": "READ", "bnf": "BNF", "drug_names": "Drug names"}
+        cols = st.columns(2) if len(fields) > 1 else [st]
+        for i, (f, v) in enumerate(fields):
+            box = cols[i % len(cols)]
+            work[f] = _lines(box.text_area(labels[f], _join(work.get(f)), height=90))
+            if v not in legal and work.get(f):
+                box.warning(f"{labels[f]} codes are not legal for source '{work['source']}'")
+        st.caption("one code/range per line · e.g. E11, F00-09")
+        _timing_editor(work)
+    elif k == "measure":
+        _source_select(work, "measure")
+        meas = R.measures_for(work["source"]) or [""]
+        cur = work.get("measure", "")
+        if cur and cur not in meas:
+            meas = [cur] + meas
+        c = st.columns([2, 1, 1, 1])
+        work["measure"] = c[0].selectbox("Measure", meas,
+                                         index=meas.index(cur) if cur in meas else 0)
+        work["op"] = c[1].selectbox("Op", S.CMP_OPS,
+                                    index=S.CMP_OPS.index(work.get("op", ">=")))
+        val = c[2].text_input("Value", _s(work.get("value")))
+        try:
+            work["value"] = float(val) if "." in val else int(val)
+        except ValueError:
+            work["value"] = None
+        work["unit"] = c[3].text_input("Unit", work.get("unit", ""))
+        _timing_editor(work)
     elif k == "sample":
         st.caption("ⓘ Counts PEOPLE who have ≥1 sample positioned vs the event. The sample is not selected.")
         se = work["sample_event"]
@@ -302,8 +402,12 @@ def leaf_dialog():
         ev["codes"] = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=80))
         se["direction"] = st.radio("Sample is", S.DIRECTION,
                                    index=S.DIRECTION.index(se["direction"]), horizontal=True)
-        se["within"] = st.text_input("Within window (blank = any time in that direction)",
-                                     se.get("within", ""), placeholder="e.g. 6 months")
+        wi = se.get("within") or {}
+        cw = st.columns(2)
+        n = _int(cw[0].text_input("Within N (blank = any time in that direction)", _s(wi.get("n"))))
+        unit = cw[1].selectbox("Unit", S.WITHIN_UNITS,
+                               index=S.WITHIN_UNITS.index(wi.get("unit", "months")))
+        se["within"] = {"n": n, "unit": unit}
     elif k == "note":
         work["text"] = st.text_area("Text", work.get("text", ""), height=90)
 
@@ -393,6 +497,29 @@ def sidebar():
                                        index=types.index(req["project_type"]), horizontal=True)
         req["target_n"] = st.text_input("Target N", req["target_n"])
         req["ticket"] = st.text_input("Ticket (optional)", req.get("ticket", ""))
+
+        with st.expander("📜 Contract header", expanded=bool(req.get("contract"))):
+            hdr = dict(req.get("contract") or {})
+            hdr["requested_by"] = st.text_input("Requested by", hdr.get("requested_by", ""))
+            hdr["approved_by"] = st.text_input("Approved by", hdr.get("approved_by", ""))
+            ref = st.text_input("Extraction spec URI (optional)",
+                                (hdr.get("references") or {}).get("extraction_spec", ""))
+            if ref.strip():
+                hdr["references"] = {"extraction_spec": ref.strip()}
+            else:
+                hdr.pop("references", None)
+            req["contract"] = {k: v for k, v in hdr.items() if v} or None
+            if st.button("🔏 Seal as agreed (version +1, hash body)", use_container_width=True):
+                S.seal(req)
+                st.rerun()
+            hdr = req.get("contract") or {}
+            if hdr.get("body_sha256"):
+                st.caption(f"id `{hdr.get('id')}` · v{hdr.get('version')} · "
+                           f"**{hdr.get('status')}** · {hdr.get('approved_on', '')}")
+                if S.hash_status(S.to_contract(req)) == "ok":
+                    st.success("hash ✓ body unchanged since sealing")
+                else:
+                    st.error("body CHANGED since sealing — re-seal to re-approve")
 
         st.divider()
         st.subheader("Groups")
@@ -492,10 +619,21 @@ def main():
             open_modal("add_to", {}, container="__EXCL__")
 
     errs = S.validate(req)
+    contract = S.to_contract(req)
     if errs:
         st.error("Not ready:\n\n" + "\n".join(f"- {e}" for e in errs))
     else:
-        st.success(f"✓ ready — {len(req['cohorts'])} cohort group(s)")
+        reg = R.check_sources(contract)                 # level 2: registry conformance
+        notes = S.notes_in(contract)
+        if reg:
+            st.warning("Registry conformance:\n\n" + "\n".join(f"- {e}" for e in reg))
+        if notes:
+            st.info(f"ⓘ ready to review — {len(req['cohorts'])} group(s), but contains "
+                    f"{len(notes)} `note` criterion(s), so it is NOT deterministically "
+                    "compilable until they are resolved into coded criteria")
+        elif not reg:
+            st.success(f"✓ ready — {len(req['cohorts'])} cohort group(s), "
+                       "deterministically compilable")
 
     if st.session_state.modal:
         mode = st.session_state.modal["mode"]

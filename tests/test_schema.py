@@ -71,7 +71,7 @@ def test_every_kind_constructs_and_exports():
 
 def test_schema_is_flag_independent():
     # ONE SCHEMA EVERYWHERE: the flag never changes what the schema accepts
-    assert S.KINDS == ["demographic", "codes", "sample", "note"]
+    assert S.KINDS == ["demographic", "codes", "measure", "sample", "note"]
     assert "biobank" in S.PROJECT_TYPES
     # …it only gates what the UI offers (default OFF = general builder)
     assert "sample" not in S.UI_KINDS
@@ -88,7 +88,7 @@ def test_flag_widens_ui_only():
     code = ("import requirement_schema as S;"
             "assert 'sample' in S.UI_KINDS;"
             "assert 'biobank' in S.UI_PROJECT_TYPES;"
-            "assert S.KINDS == ['demographic', 'codes', 'sample', 'note'];"
+            "assert S.KINDS == ['demographic', 'codes', 'measure', 'sample', 'note'];"
             "assert S.PROJECT_TYPES == ['recruitment', 'registry', 'biobank', 'other'];"
             "assert S.validate(S.build_example()) == [];"
             "print('ok')")
@@ -101,7 +101,8 @@ def test_flag_widens_ui_only():
 def test_sample_kind_not_coerced_when_flag_off():
     # a sample condition in a loaded contract stays a sample (semantic
     # preservation) even though the default UI doesn't offer creating one
-    contract = {"project": "x", "project_type": "recruitment", "schema_version": 1,
+    contract = {"project": "x", "project_type": "recruitment",
+                "schema_version": S.SCHEMA_VERSION,
                 "cohorts": [{"id": "g1", "name": "G", "exclusions": [], "inclusion": {
                     "id": "c1", "op": "AND", "members": [
                         {"id": "s1", "kind": "sample", "label": "has sample",
@@ -160,11 +161,11 @@ def test_clone_group_fresh_ids_same_content():
 # ---------------------------------------------------------------------------
 def _minimal_contract():
     return {"project": "x", "project_type": "recruitment", "target_n": "",
-            "schema_version": 1,
+            "schema_version": S.SCHEMA_VERSION,
             "cohorts": [{"id": "g1", "name": "G", "exclusions": [], "inclusion": {
                 "id": "c1", "op": "AND", "members": [
                     {"id": "l1", "kind": "codes", "label": "c",
-                     "source": "hospital", "icd": ["A00"]}]}}]}
+                     "source": "hospital_admissions", "icd": ["A00"]}]}}]}
 
 
 def test_gate_accepts_app_export():
@@ -239,3 +240,105 @@ def test_duplicate_group_names_invalid():
     req["cohorts"].append(S.clone_group(req["cohorts"][0]))
     req["cohorts"][1]["name"] = req["cohorts"][0]["name"]
     assert any("used more than once" in e for e in S.validate(req))
+
+
+# ---------------------------------------------------------------------------
+# v2: measure kind, timing (`when`), legacy coercions, contract header + hash
+# ---------------------------------------------------------------------------
+def test_measure_gate_checks():
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"].append(
+        {"id": "m1", "kind": "measure", "source": "lab_results",
+         "measure": "hba1c", "op": ">=", "value": 48})
+    assert S.check_contract(c) == []
+    c["cohorts"][0]["inclusion"]["members"][1]["op"] = "~"
+    c["cohorts"][0]["inclusion"]["members"][1]["value"] = "high"
+    errs = S.check_contract(c)
+    assert any("measure op" in e for e in errs)
+    assert any("must be a number" in e for e in errs)
+
+
+def test_when_gate_checks():
+    c = _minimal_contract()
+    leaf = c["cohorts"][0]["inclusion"]["members"][0]
+    leaf["when"] = {"window": {"from": "2018-01-01", "to": "2020-12-31"}}
+    assert S.check_contract(c) == []
+    leaf["when"] = {"window": {"from": "whenever"}}
+    assert any("ISO date" in e for e in S.check_contract(c))
+    leaf["when"] = {"anchor": {"event": {"source": "gp_events", "vocab": "read",
+                                         "codes": ["X1"], "occurrence": "first"},
+                               "direction": "before",
+                               "within": {"n": 6, "unit": "months"}}}
+    assert S.check_contract(c) == []
+    leaf["when"]["anchor"]["within"] = {"n": 0, "unit": "fortnights"}
+    errs = S.check_contract(c)
+    assert any("positive integer" in e for e in errs)
+    assert any("within.unit" in e for e in errs)
+    leaf["when"] = {}
+    assert any("window and/or an anchor" in e for e in S.check_contract(c))
+
+
+def test_draft_load_coerces_legacy_sex_and_within():
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"] = [
+        {"id": "d1", "kind": "demographic", "sex": "both", "age_min": 18},
+        {"id": "s1", "kind": "sample",
+         "sample_event": {"event": {"type": "gp_data", "codes": ["X1"]},
+                          "direction": "before", "within": "6 months"}}]
+    issues = []
+    req = S.from_contract(c, issues)
+    d, s = req["cohorts"][0]["inclusion"]["members"]
+    assert d["sex"] == "any"
+    assert s["sample_event"]["within"] == {"n": 6, "unit": "months"}
+    assert any("legacy sex 'both'" in w for w in issues)
+    assert any("legacy within '6 months'" in w for w in issues)
+
+
+def test_seal_and_hash_detects_edits():
+    req = S.build_example()
+    assert S.hash_status(S.to_contract(req)) is None        # unsealed
+    S.seal(req, approved_by="reviewer")
+    c = S.to_contract(req)
+    assert c["contract"]["status"] == "agreed"
+    assert S.hash_status(c) == "ok"
+    assert S.check_contract(c) == []
+    c["cohorts"][0]["name"] = "tampered"                    # edit after approval
+    assert S.hash_status(c) == "changed"
+    assert any("CHANGED since it was sealed" in e for e in S.check_contract(c))
+
+
+def test_gate_rejects_bad_header():
+    c = _minimal_contract()
+    c["contract"] = {"status": "signed", "notary": "x"}
+    errs = S.check_contract(c)
+    assert any("contract.status" in e for e in errs)
+    assert any("notary" in e for e in errs)
+    c["contract"] = {"status": "agreed"}                    # agreed needs id + hash
+    errs = S.check_contract(c)
+    assert any("contract.id" in e for e in errs)
+    assert any("contract.body_sha256" in e for e in errs)
+
+
+def test_seal_roundtrips_through_yaml():
+    req = S.build_example()
+    S.seal(req)
+    text = yaml.dump(S.to_contract(req), sort_keys=False, allow_unicode=True)
+    reloaded = yaml.safe_load(text)
+    assert S.hash_status(reloaded) == "ok"
+    issues = []
+    req2 = S.from_contract(reloaded, issues)
+    assert issues == []
+    assert S.hash_status(S.to_contract(req2)) == "ok"       # survives load/export
+
+
+def test_json_schema_file_in_sync():
+    import json
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "requirement.schema.json")) as f:
+        assert json.load(f) == S.json_schema()
+
+
+def test_json_schema_validates_example():
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    jsonschema.validate(S.to_contract(S.build_example()), S.json_schema())

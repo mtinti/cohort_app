@@ -1,0 +1,566 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cohort requirement contract",
+  "description": "Generated from requirement_schema.py \u2014 do not edit by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "project_type",
+    "schema_version",
+    "cohorts"
+  ],
+  "properties": {
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "agreed"
+          ]
+        },
+        "requested_by": {
+          "type": "string"
+        },
+        "approved_by": {
+          "type": "string"
+        },
+        "approved_on": {
+          "type": "string"
+        },
+        "body_sha256": {
+          "type": "string"
+        },
+        "references": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "extraction_spec": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "project": {
+      "type": "string"
+    },
+    "project_type": {
+      "enum": [
+        "recruitment",
+        "registry",
+        "biobank",
+        "other"
+      ]
+    },
+    "target_n": {
+      "type": "string"
+    },
+    "ticket": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 2
+    },
+    "cohorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "inclusion"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "inclusion": {
+            "$ref": "#/definitions/container"
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/member"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "op",
+        "members"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "AND",
+            "OR"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/member"
+          }
+        }
+      }
+    },
+    "member": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/container"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "demographic"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "age_min": {
+              "type": "integer"
+            },
+            "age_max": {
+              "type": "integer"
+            },
+            "sex": {
+              "enum": [
+                "any",
+                "female",
+                "male"
+              ]
+            },
+            "residence": {
+              "type": "string"
+            },
+            "simd": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "codes"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "icd": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "read": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "bnf": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "drug_names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "when": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "window": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "to": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    }
+                  }
+                },
+                "anchor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "event",
+                    "direction"
+                  ],
+                  "properties": {
+                    "event": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source",
+                        "vocab",
+                        "codes"
+                      ],
+                      "properties": {
+                        "source": {
+                          "type": "string"
+                        },
+                        "vocab": {
+                          "type": "string"
+                        },
+                        "codes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "minItems": 1
+                        },
+                        "occurrence": {
+                          "enum": [
+                            "first",
+                            "last"
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "direction": {
+                      "enum": [
+                        "before",
+                        "after"
+                      ]
+                    },
+                    "within": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "n",
+                        "unit"
+                      ],
+                      "properties": {
+                        "n": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "unit": {
+                          "enum": [
+                            "days",
+                            "weeks",
+                            "months",
+                            "years"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "measure"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "measure": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "<",
+                "<=",
+                ">",
+                ">=",
+                "=",
+                "!="
+              ]
+            },
+            "value": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "when": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "window": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "to": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    }
+                  }
+                },
+                "anchor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "event",
+                    "direction"
+                  ],
+                  "properties": {
+                    "event": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source",
+                        "vocab",
+                        "codes"
+                      ],
+                      "properties": {
+                        "source": {
+                          "type": "string"
+                        },
+                        "vocab": {
+                          "type": "string"
+                        },
+                        "codes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "minItems": 1
+                        },
+                        "occurrence": {
+                          "enum": [
+                            "first",
+                            "last"
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "direction": {
+                      "enum": [
+                        "before",
+                        "after"
+                      ]
+                    },
+                    "within": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "n",
+                        "unit"
+                      ],
+                      "properties": {
+                        "n": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "unit": {
+                          "enum": [
+                            "days",
+                            "weeks",
+                            "months",
+                            "years"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "sample"
+            },
+            "label": {
+              "type": "string"
+            },
+            "sample_event": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "event",
+                "direction"
+              ],
+              "properties": {
+                "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "hospitalisation",
+                        "medicine",
+                        "gp_data",
+                        "lab_result"
+                      ]
+                    },
+                    "occurrence": {
+                      "enum": [
+                        "first",
+                        "last"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "codes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "direction": {
+                  "enum": [
+                    "before",
+                    "after"
+                  ]
+                },
+                "within": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "n",
+                    "unit"
+                  ],
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "unit": {
+                      "enum": [
+                        "days",
+                        "weeks",
+                        "months",
+                        "years"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "note"
+            },
+            "label": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

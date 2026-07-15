@@ -1,0 +1,57 @@
+# ============================================================================
+# Logical source registry — the controlled vocabulary contracts reference.
+#
+# NORMATIVE FOR MEANING: code-matching and range-expansion semantics live HERE
+# (or in the contract), never in a site binding. A binding only maps these
+# logical names to local tables/columns — so two sites executing the same
+# contract select the same patients by construction.
+#
+# `kinds` = which criterion kinds may use the source:
+#   codes / demographic / measure  — leaf criterion kinds
+#   anchor        — usable as the index event of a timing anchor
+#   sample_target — the sample-event table used by kind: sample
+# ============================================================================
+registry_version: 1
+
+vocabularies:
+  icd10:
+    label: ICD-10
+    match: prefix           # a code selects itself and all descendants
+    range: numeric_suffix   # "F00-09" expands to prefixes F00..F09
+  read:
+    label: READ
+    match: prefix
+  bnf:
+    label: BNF
+    match: prefix
+  drug_name:
+    label: Drug name
+    match: exact_ci         # case-insensitive exact match
+
+sources:
+  demographics:
+    description: One row per patient; age and sex.
+    kinds: [demographic]
+  hospital_admissions:
+    description: Coded hospital admission events.
+    kinds: [codes, anchor]
+    vocabularies: [icd10]
+  gp_events:
+    description: Coded primary-care events.
+    kinds: [codes, anchor]
+    vocabularies: [read]
+  prescribing:
+    description: Prescribed / dispensed medicines.
+    kinds: [codes, anchor]
+    vocabularies: [bnf, drug_name]
+  deaths:
+    description: Death records (coded cause).
+    kinds: [codes, anchor]
+    vocabularies: [icd10]
+  lab_results:
+    description: Numeric laboratory results.
+    kinds: [measure, anchor]
+    measures: [hba1c, egfr]
+  biobank_samples:
+    description: Biobank sample events (one row per sample, dated).
+    kinds: [sample_target]

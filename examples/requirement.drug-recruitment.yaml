@@ -1,0 +1,47 @@
+# ============================================================================
+# FIXTURE contract — drug-exposure recruitment
+# One of the step-0 representative requirements (plan.md §4). Passes the
+# strict gate + registry conformance, and compiles against both example site
+# bindings; the compiler tests assert both sites select the SAME patients on
+# identically-seeded synthetic data.
+# ============================================================================
+project: 'Fixture: drug-exposure recruitment'
+project_type: recruitment
+target_n: ~20
+schema_version: 2
+cohorts:
+- id: 6a8c80f5
+  name: Exposed adults
+  inclusion:
+    id: b15a3ebe
+    op: AND
+    members:
+    - id: f1f8870b
+      kind: demographic
+      label: Adults
+      source: demographics
+      age_min: 18
+      age_max: 80
+    - id: 964de18f
+      op: OR
+      label: Drug exposure (name or BNF)
+      members:
+      - id: da41014c
+        kind: codes
+        label: By drug name
+        source: prescribing
+        drug_names:
+        - metformin
+      - id: dbc4c655
+        kind: codes
+        label: By BNF code
+        source: prescribing
+        bnf:
+        - '06011'
+  exclusions:
+  - id: f92c1f9d
+    kind: codes
+    label: Prior condition
+    source: hospital_admissions
+    icd:
+    - A00
