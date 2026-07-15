@@ -85,6 +85,7 @@ def init():
         st.session_state.sel = 0
     st.session_state.setdefault("modal", None)
     st.session_state.setdefault("work", None)
+    st.session_state.setdefault("load_report", None)
 
 
 def group():
@@ -259,7 +260,10 @@ def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=Fa
 @st.dialog("Condition")
 def leaf_dialog():
     work = st.session_state.work
-    nk = st.selectbox("Kind", S.KINDS, index=S.KINDS.index(work["kind"]))
+    # offer the flag-gated UI kinds; a loaded contract may carry a kind the UI
+    # doesn't offer for new conditions — keep it selectable so it stays editable
+    kinds = list(S.UI_KINDS) if work["kind"] in S.UI_KINDS else [work["kind"]] + list(S.UI_KINDS)
+    nk = st.selectbox("Kind", kinds, index=kinds.index(work["kind"]))
     if nk != work["kind"]:
         nid = work["_id"]
         work = S.new_leaf(nk, work.get("label", ""))
@@ -380,9 +384,13 @@ def sidebar():
         st.title("Health Cohort Builder")
         st.subheader("Project")
         req["project"] = st.text_input("Title", req["project"])
-        pt = req["project_type"] if req["project_type"] in S.PROJECT_TYPES else S.PROJECT_TYPES[0]
-        req["project_type"] = st.radio("Type", S.PROJECT_TYPES,
-                                       index=S.PROJECT_TYPES.index(pt), horizontal=True)
+        # offer the flag-gated UI types; keep a loaded value the UI doesn't
+        # offer visible rather than coercing it (validate() flags unknown ones)
+        types = list(S.UI_PROJECT_TYPES)
+        if req["project_type"] not in types:
+            types.append(req["project_type"])
+        req["project_type"] = st.radio("Type", types,
+                                       index=types.index(req["project_type"]), horizontal=True)
         req["target_n"] = st.text_input("Target N", req["target_n"])
         req["ticket"] = st.text_input("Ticket (optional)", req.get("ticket", ""))
 
@@ -418,6 +426,7 @@ def sidebar():
             open_modal("yaml", {})
         if st.button("New (blank requirement)", use_container_width=True):
             st.session_state.req = S.new_requirement()
+            st.session_state.load_report = None
             st.session_state.sel = 0; st.rerun()
         st.markdown("**📁 Load a requirement.yaml**")
         up = st.file_uploader("Drag a .yaml here or browse", type=["yaml", "yml"],
@@ -427,12 +436,28 @@ def sidebar():
             if st.session_state.get("_loaded_sig") != sig:       # load each new file once
                 try:
                     data = yaml.safe_load(up.getvalue().decode("utf-8"))
-                    st.session_state.req = S.from_contract(data)
+                    issues = []
+                    gate = S.check_contract(data)
+                    st.session_state.req = S.from_contract(data, issues)
+                    st.session_state.load_report = {"name": up.name, "gate": gate,
+                                                    "draft": issues}
                     st.session_state.sel = 0
                     st.session_state._loaded_sig = sig
                     st.rerun()
                 except Exception as e:
                     st.error(f"Could not load: {e}")
+        rep = st.session_state.get("load_report")
+        if rep:
+            if not rep["gate"] and not rep["draft"]:
+                st.success(f"✓ {rep['name']} passes the strict contract gate")
+            else:
+                lines = [f"**{rep['name']} loaded as a DRAFT** — it does not pass "
+                         "the strict contract gate:"]
+                lines += [f"- {e}" for e in rep["gate"]]
+                if rep["draft"]:
+                    lines.append("Coercions applied on load:")
+                    lines += [f"- {w}" for w in rep["draft"]]
+                st.warning("\n".join(lines))
 
 
 # ----------------------------- main ----------------------------------------

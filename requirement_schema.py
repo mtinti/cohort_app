@@ -4,18 +4,24 @@ Imported by BOTH the Streamlit app and (eventually) the pipeline, so the two can
 never drift. Holds:
   * the controlled vocabularies (project types, ops, kinds, event types …),
   * node factories (new_* — each carries an internal `_id` for the UI tree),
-  * to_contract(req) -> a clean dict ready to YAML-dump (strips _id and empties),
-  * validate(req)    -> a list of human-readable problems (basic shape checks),
-  * build_example()  -> the worked two-group example (mirrors examples/*.yaml).
+  * to_contract(req)  -> a clean dict ready to YAML-dump (persistent `id` per
+                         group/container/leaf; internal `_id`/flags stripped),
+  * from_contract()   -> DRAFT load: tolerant, but reports every coercion,
+  * check_contract()  -> STRICT GATE: fail-closed check on a raw contract dict
+                         (approval / compilation require a clean pass),
+  * validate(req)     -> a list of human-readable problems (basic shape checks),
+  * build_example()   -> the worked two-group example (mirrors examples/*.yaml).
 
-Design (see docs/SPEC.md): each GROUP is self-contained = one RDMP build.
-inclusion is a CONTAINER (AND=INTERSECT / OR=UNION) built first; exclusions are
-an ORDERED list subtracted in turn (root EXCEPT). Leaves are cohort sets of one
-of three kinds: demographic / codes / note.
+Design (see docs/SPEC.md and plan.md): each GROUP is self-contained = one RDMP
+build. inclusion is a CONTAINER (AND=INTERSECT / OR=UNION) built first;
+exclusions are an ORDERED list subtracted in turn (root EXCEPT). Leaves are
+cohort sets of kind demographic / codes / sample / note.
 
-Feature flag: set env COHORT_ENABLE_SAMPLES=1 to enable the SHARE/GoSHARE variant,
-which adds a `sample` condition kind (biobank sample / event-anchored selection)
-and biobank project type. Default OFF = general health-data cohort builder.
+ONE SCHEMA FOR ALL ENVIRONMENTS: the schema always accepts every kind and
+project type — a given schema_version means exactly one thing everywhere.
+The env flag COHORT_ENABLE_SAMPLES=1 only widens what the UI OFFERS
+(UI_KINDS / UI_PROJECT_TYPES: adds the `sample` kind and `biobank` type to the
+authoring menus); it never changes what parses or validates.
 """
 import os
 import uuid
@@ -23,10 +29,15 @@ import uuid
 ENABLE_SAMPLES = os.environ.get("COHORT_ENABLE_SAMPLES", "").lower() in ("1", "true", "yes", "on")
 
 OPS = ["AND", "OR"]
-KINDS = (["demographic", "codes", "sample", "note"] if ENABLE_SAMPLES
-         else ["demographic", "codes", "note"])
-PROJECT_TYPES = (["recruitment", "biobank"] if ENABLE_SAMPLES
-                 else ["recruitment", "registry", "other"])
+# Normative vocabularies (what the schema ACCEPTS — identical everywhere).
+KINDS = ["demographic", "codes", "sample", "note"]
+PROJECT_TYPES = ["recruitment", "registry", "biobank", "other"]
+# What the authoring UI OFFERS (feature-flag gated; a superset never parses
+# differently, the flag only surfaces extra choices in the form).
+UI_KINDS = (["demographic", "codes", "sample", "note"] if ENABLE_SAMPLES
+            else ["demographic", "codes", "note"])
+UI_PROJECT_TYPES = (["recruitment", "biobank"] if ENABLE_SAMPLES
+                    else ["recruitment", "registry", "other"])
 
 # Sample / event-anchored selection — SHARE variant only (surfaced when ENABLE_SAMPLES).
 EVENT_TYPES = ["hospitalisation", "medicine", "gp_data", "lab_result"]
@@ -112,17 +123,20 @@ def new_requirement():
 
 
 # ---------------------------------------------------------------------------
-# Export: UI tree -> clean contract dict (strip _id / internal flags / empties).
+# Export: UI tree -> clean contract dict. The internal `_id` is exported as a
+# PERSISTENT `id` (so criteria stay addressable across versions — for review
+# comments, diffs, feasibility errors); other internal flags/empties are
+# stripped.
 # ---------------------------------------------------------------------------
 def _clean(n):
     if n.get("node") == "container":
-        out = {"op": n["op"]}
+        out = {"id": n["_id"], "op": n["op"]}
         if n.get("label"):
             out["label"] = n["label"]
         out["members"] = [_clean(m) for m in n.get("members", [])]
         return out
     k = n["kind"]
-    out = {"kind": k}
+    out = {"id": n["_id"], "kind": k}
     if n.get("label"):
         out["label"] = n["label"]
     if k == "demographic":
@@ -155,41 +169,65 @@ def _clean(n):
     return out
 
 
-def _build_member(d):
-    """Inverse of _clean: a contract dict -> a UI node (with fresh _ids)."""
+def _keep_id(node, d):
+    """Preserve a contract `id` on the rebuilt UI node (persistent identity)."""
+    if isinstance(d, dict) and d.get("id"):
+        node["_id"] = str(d["id"])
+    return node
+
+
+def _build_member(d, rec):
+    """Inverse of _clean: a contract dict -> a UI node.
+
+    DRAFT-mode tolerant: unknown/unparseable members are kept VISIBLE as notes
+    and every such coercion is reported via rec(). Semantics are never changed
+    silently — check_contract() is the fail-closed path.
+    """
     if not isinstance(d, dict):
+        rec(f"unparseable member kept as a note: {d!r}")
         return new_note("(unparseable)", str(d))
     if "op" in d or "members" in d:                       # container
-        return new_container(d.get("op", "AND"), d.get("label", ""),
-                             [_build_member(m) for m in d.get("members", [])])
+        if d.get("op", "AND") not in OPS:
+            rec(f"container op {d.get('op')!r} is not AND/OR (kept as authored)")
+        return _keep_id(new_container(d.get("op", "AND"), d.get("label", ""),
+                                      [_build_member(m, rec) for m in d.get("members", [])]), d)
     k = d.get("kind")
     if k == "demographic":
-        return new_demographic(d.get("label", ""), d.get("source", "Demographics"),
-                               d.get("age_min"), d.get("age_max"), d.get("sex", "both"),
-                               d.get("residence", ""), d.get("simd", ""))
+        return _keep_id(new_demographic(d.get("label", ""), d.get("source", "Demographics"),
+                                        d.get("age_min"), d.get("age_max"), d.get("sex", "both"),
+                                        d.get("residence", ""), d.get("simd", "")), d)
     if k == "codes":
-        return new_codes(d.get("label", ""), d.get("source", ""), d.get("icd"),
-                         d.get("read"), d.get("bnf"), d.get("drug_names"))
+        return _keep_id(new_codes(d.get("label", ""), d.get("source", ""), d.get("icd"),
+                                  d.get("read"), d.get("bnf"), d.get("drug_names")), d)
     if k == "sample":
-        if not ENABLE_SAMPLES:        # general mode: keep it visible as a note
-            return new_note(d.get("label", "(sample)"),
-                            "sample condition — enable COHORT_ENABLE_SAMPLES to edit")
         se = d.get("sample_event", {}) or {}
         ev = se.get("event", {}) or {}
-        return new_sample(d.get("label", ""), ev.get("type", "gp_data"),
-                          ev.get("occurrence", "first"), ev.get("label", ""),
-                          ev.get("codes"), se.get("direction", "before"), se.get("within", ""))
+        return _keep_id(new_sample(d.get("label", ""), ev.get("type", "gp_data"),
+                                   ev.get("occurrence", "first"), ev.get("label", ""),
+                                   ev.get("codes"), se.get("direction", "before"),
+                                   se.get("within", "")), d)
     if k == "note":
-        return new_note(d.get("label", ""), d.get("text", ""))
-    return new_note(d.get("label", "(unknown)"), str(d))   # tolerate unknown/legacy kinds
+        return _keep_id(new_note(d.get("label", ""), d.get("text", "")), d)
+    rec(f"unknown kind {k!r} kept as a note ('{d.get('label', '')}') — it will NOT compile")
+    return _keep_id(new_note(d.get("label") or f"(unsupported kind {k!r})", str(d)), d)
 
 
-def from_contract(data):
-    """Load a requirement YAML/dict back into an editable UI tree."""
+def from_contract(data, issues=None):
+    """DRAFT load: a requirement YAML/dict -> an editable UI tree.
+
+    Tolerant (for repairing work-in-progress files), but NEVER silent: every
+    coercion is appended to `issues` (a caller-supplied list). Approval and
+    compilation must instead go through check_contract(), which fails closed.
+    """
+    rec = issues.append if issues is not None else (lambda m: None)
     data = data or {}
+    sv = data.get("schema_version")
+    if sv != SCHEMA_VERSION:
+        rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION} "
+            "(loaded as a draft; the strict gate will reject it)")
     pt = data.get("project_type", "recruitment")
-    if pt not in PROJECT_TYPES:               # tolerate legacy types (e.g. "biobank")
-        pt = "other"
+    if pt not in PROJECT_TYPES:               # keep verbatim — validate() will flag it
+        rec(f"unknown project_type {pt!r} (kept as authored)")
     req = {"project": data.get("project", ""),
            "project_type": pt,
            "target_n": data.get("target_n", ""),
@@ -197,16 +235,118 @@ def from_contract(data):
            "schema_version": data.get("schema_version", SCHEMA_VERSION),
            "cohorts": []}
     for gd in data.get("cohorts", []) or []:
-        inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []})
+        inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []}, rec)
         if inc.get("node") != "container":               # inclusion must be a container
+            rec(f"group '{gd.get('name', '')}': inclusion was a single condition; "
+                "wrapped in an AND container")
             inc = new_container("AND", members=[inc])
-        req["cohorts"].append({
-            "_id": _id(), "name": gd.get("name", ""),
-            "inclusion": inc,
-            "exclusions": [_build_member(m) for m in (gd.get("exclusions") or [])]})
+        g = {"_id": _id(), "name": gd.get("name", ""),
+             "inclusion": inc,
+             "exclusions": [_build_member(m, rec) for m in (gd.get("exclusions") or [])]}
+        _keep_id(g, gd)
+        req["cohorts"].append(g)
     if not req["cohorts"]:
+        rec("file has no cohorts; started an empty group")
         req["cohorts"] = [new_group("Group 1")]
     return req
+
+
+# ---------------------------------------------------------------------------
+# STRICT GATE (fail-closed) — structural check on a RAW contract dict.
+# Approval and compilation require a clean pass; the editor may still open a
+# failing file via from_contract() (draft mode), which tolerates and reports.
+# ---------------------------------------------------------------------------
+_TOP_KEYS = {"project", "project_type", "target_n", "ticket", "schema_version", "cohorts"}
+_GROUP_KEYS = {"id", "name", "inclusion", "exclusions"}
+_CONTAINER_KEYS = {"id", "op", "label", "members"}
+_LEAF_KEYS = {
+    "demographic": {"id", "kind", "label", "source", "age_min", "age_max",
+                    "sex", "residence", "simd"},
+    "codes": {"id", "kind", "label", "source", "icd", "read", "bnf", "drug_names"},
+    "sample": {"id", "kind", "label", "sample_event"},
+    "note": {"id", "kind", "label", "text"},
+}
+
+
+def check_contract(data):
+    """Return a list of gate failures for a raw contract dict ([] = passes).
+
+    Rejects (never coerces): unsupported schema_version, unknown fields,
+    unknown kinds/ops/project types, missing or duplicate persistent ids.
+    """
+    errs = []
+    if not isinstance(data, dict):
+        return ["contract must be a YAML mapping"]
+
+    def unknown(d, allowed, where):
+        extra = set(d) - allowed
+        if extra:
+            errs.append(f"{where}: unknown field(s): " + ", ".join(sorted(extra)))
+
+    unknown(data, _TOP_KEYS, "top level")
+    sv = data.get("schema_version")
+    if sv != SCHEMA_VERSION:
+        errs.append(f"unsupported schema_version {sv!r} (supported: {SCHEMA_VERSION})")
+    if data.get("project_type") not in PROJECT_TYPES:
+        errs.append(f"project_type {data.get('project_type')!r} must be one of: "
+                    + ", ".join(PROJECT_TYPES))
+    seen = set()
+
+    def check_id(d, where):
+        i = d.get("id")
+        if not i:
+            errs.append(f"{where}: missing persistent id")
+        elif i in seen:
+            errs.append(f"{where}: duplicate id {i!r}")
+        else:
+            seen.add(i)
+
+    def member(d, where):
+        if not isinstance(d, dict):
+            errs.append(f"{where}: member must be a mapping")
+            return
+        if "op" in d or "members" in d:                   # container
+            check_id(d, where)
+            unknown(d, _CONTAINER_KEYS, where)
+            if d.get("op") not in OPS:
+                errs.append(f"{where}: container op {d.get('op')!r} must be AND or OR")
+            ms = d.get("members")
+            if not isinstance(ms, list):
+                errs.append(f"{where}: container members must be a list")
+                return
+            for j, m in enumerate(ms, 1):
+                member(m, f"{where} > member {j}")
+            return
+        k = d.get("kind")
+        if k not in KINDS:
+            errs.append(f"{where}: unknown kind {k!r} (must be one of: " + ", ".join(KINDS) + ")")
+            return
+        check_id(d, where)
+        unknown(d, _LEAF_KEYS[k], where)
+
+    cohorts = data.get("cohorts")
+    if not isinstance(cohorts, list) or not cohorts:
+        errs.append("cohorts must be a non-empty list")
+        return errs
+    for gi, g in enumerate(cohorts, 1):
+        gname = (g.get("name") if isinstance(g, dict) else None) or f"group {gi}"
+        if not isinstance(g, dict):
+            errs.append(f"{gname}: group must be a mapping")
+            continue
+        check_id(g, gname)
+        unknown(g, _GROUP_KEYS, gname)
+        inc = g.get("inclusion")
+        if not isinstance(inc, dict) or not ("op" in inc or "members" in inc):
+            errs.append(f"{gname}: inclusion must be a container (op + members)")
+        else:
+            member(inc, f"{gname} inclusion")
+        ex = g.get("exclusions", [])
+        if not isinstance(ex, list):
+            errs.append(f"{gname}: exclusions must be a list")
+        else:
+            for j, m in enumerate(ex, 1):
+                member(m, f"{gname} exclusion {j}")
+    return errs
 
 
 def to_contract(req):
@@ -216,7 +356,7 @@ def to_contract(req):
            "schema_version": req.get("schema_version", SCHEMA_VERSION)}
     if req.get("ticket"):
         out["ticket"] = req["ticket"]
-    out["cohorts"] = [{"name": g.get("name", ""),
+    out["cohorts"] = [{"id": g["_id"], "name": g.get("name", ""),
                        "inclusion": _clean(g["inclusion"]),
                        "exclusions": [_clean(m) for m in g.get("exclusions", [])]}
                       for g in req.get("cohorts", [])]
@@ -265,6 +405,10 @@ def validate(req):
         errs.append("Project type must be one of: " + ", ".join(PROJECT_TYPES) + ".")
     if not req.get("cohorts"):
         errs.append("Add at least one group.")
+    names = [g.get("name", "").strip() for g in req.get("cohorts", [])]
+    for dup in sorted({n for n in names if n and names.count(n) > 1}):
+        errs.append(f"Group name '{dup}' is used more than once — names must be "
+                    "unique (each names one downstream build).")
     ptype = req.get("project_type")
     for i, g in enumerate(req.get("cohorts", []), 1):
         gname = g.get("name") or f"Group {i}"

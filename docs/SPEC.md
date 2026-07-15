@@ -2,20 +2,23 @@
 
 > **Variant note:** this spec describes the full **SHARE/GoSHARE** design,
 > including biobank **sample / event-anchored selection** and RDMP mapping. That
-> is now a **feature flag on the single `main` codebase**: set
-> `COHORT_ENABLE_SAMPLES=1` to enable the `sample` condition kind + biobank
-> project type. Default (flag off) is a **general health-data cohort builder**
-> (condition kinds demographic / codes / note). Everything else (groups,
-> INTERSECT/UNION containers, ordered exclusions, load / clone / preview) is
-> shared by both.
+> is now a **UI feature flag on the single `main` codebase**: set
+> `COHORT_ENABLE_SAMPLES=1` to *offer* the `sample` condition kind + biobank
+> project type in the form. **The schema itself is flag-independent** — every
+> kind and project type parses and validates identically everywhere, so a given
+> `schema_version` means exactly one thing in every environment. Default (flag
+> off) the form offers the **general health-data cohort builder** kinds
+> (demographic / codes / note). Everything else (groups, INTERSECT/UNION
+> containers, ordered exclusions, load / clone / preview) is shared by both.
 
-**Status:** draft v2 (2026-06-25)
+**Status:** draft v2.1 (2026-07-15) — adds persistent `id`s, one-schema-for-all-
+environments, and draft-vs-strict loading (see `plan.md`)
 **Decisions locked:** Streamlit (Python) · structured-form-only · download-YAML-only ·
 each group **self-contained** (one group = one complete RDMP build) ·
 inclusion **container** + **ordered** exclusions (researcher-ordered subtraction) ·
 event-anchored **sample membership** (single anchor).
 
-Worked, annotated output: **`docs/examples/requirement.example.yaml`**.
+Worked, annotated output: **`examples/requirement.example.yaml`**.
 
 ---
 
@@ -29,7 +32,7 @@ This tool lets the **researcher author the structured requirement directly** in 
 web form that emits a downloadable **YAML file** — the same contract Agent 2
 consumes. The docx and the whole extraction stage are bypassed.
 
-Why this is high-value (see `PROJECT-JOURNEY.md`):
+Why this is high-value (see `PROJECT-JOURNEY.md` in the pipeline repo — not in this repo):
 
 - **Eliminates two proven bug classes at the source** — criteria lost in Word text
   boxes (30–60 % of some forms) and code/range mis-transcription. Typed structured
@@ -82,9 +85,9 @@ the **`sample_event`** index rule (single anchor); **basic client-side validatio
 (§6); **live YAML preview** + **download**.
 
 **Out of scope (v1)** — handled downstream or deferred:
-- Deterministic **code expansion** (`scripts/expand_codes.py`).
+- Deterministic **code expansion** (`scripts/expand_codes.py`, pipeline repo).
 - **Catalogue/filter mapping** & **structural validation** (Agent 2 +
-  `scripts/validate_build_script.py`).
+  `scripts/validate_build_script.py`, both pipeline repo).
 - "Smart form" extras: manifest-backed autocomplete, live expansion preview,
   one-click "build cohort", docx import pre-fill (all → §11 future).
 - Auth, persistence/DB, Jira integration, hosting/CI.
@@ -93,14 +96,14 @@ the **`sample_event`** index rule (single anchor); **basic client-side validatio
 
 The form output **must deserialize to the shape Agent 2 consumes**, and codes are
 emitted **verbatim** (expansion happens downstream). Canonical worked file:
-`docs/examples/requirement.example.yaml`.
+`examples/requirement.example.yaml`.
 
 ### 5.1 Top level
 
 | field | type | notes |
 |---|---|---|
 | `project` | string | project title |
-| `project_type` | enum `recruitment` \| `biobank` | hints the builder's template family (SHARE vs GoSHARE) |
+| `project_type` | enum `recruitment` \| `registry` \| `biobank` \| `other` | hints the builder's template family; the schema accepts all four everywhere (the UI flag only gates what the form offers) |
 | `target_n` | string | free text, e.g. "15 per group (90 total)" |
 | `ticket` | string (optional) | Jira key; names files / tags YAML only — **no Jira calls** |
 | `schema_version` | int | currently `1` |
@@ -110,14 +113,16 @@ emitted **verbatim** (expansion happens downstream). Canonical worked file:
 
 | field | type | notes |
 |---|---|---|
-| `name` | string | group label |
+| `id` | string | **persistent id** — stable across load/edit/export; addresses the group in diffs, review comments and feasibility errors |
+| `name` | string | group label; must be **unique** within the file (names one build) |
 | `inclusion` | **Container** | the base-population container (built first) |
 | `exclusions` | ordered list of **Member** | each subtracted in turn (root EXCEPT) |
 
 ### 5.3 Container
 
-`{ op: AND | OR, label?: string, members: [ Member ] }` — `AND`→INTERSECT,
-`OR`→UNION. Containers may nest (a member can be another container).
+`{ id, op: AND | OR, label?: string, members: [ Member ] }` — `AND`→INTERSECT,
+`OR`→UNION. Containers may nest (a member can be another container). Every
+container and leaf carries a persistent `id` (as groups do).
 
 ### 5.4 Member = a Container **or** a leaf cohort set (`kind`)
 
@@ -182,7 +187,7 @@ shown as "subtracted 1st, 2nd, …". Empty list allowed.
 (demographic / codes / sample / note); render the right fields:
 - *demographic*: age range, sex, residence, SIMD, source.
 - *codes*: a `source` picker + verbatim code list editors (icd/read/bnf/drug_names;
-  one code per line); format hints from `references/code-expansion.md`.
+  one code per line); format hints from `references/code-expansion.md` (pipeline repo).
 - *sample*: the `sample_event` editor (F6).
 - *note*: label + free text.
 
@@ -204,12 +209,22 @@ Shape and obvious mistakes — **not** semantics (semantics = downstream):
   has an event type + ≥1 event code unless `lab_result` free text; `age_min ≤
   age_max`).
 - Light **format hints** (warnings) reusing the regexes/spec in
-  `scripts/expand_codes.py` / `references/code-expansion.md` so form and expander
+  `scripts/expand_codes.py` / `references/code-expansion.md` (pipeline repo) so form and expander
   agree on what's parseable.
 - A container has ≥1 member; `op` is set.
 
 **Not** validated here (deferred): code expansion correctness, catalogue/filter
 existence, RDMP structural rules.
+
+**Loading is two-mode (fail-closed for contracts):**
+- **Draft load** (`from_contract`) — tolerant, for repairing work-in-progress
+  files; every coercion (unknown kind kept visible as a note, wrapped
+  inclusion, version mismatch) is **reported to the user**, never silent.
+- **Strict gate** (`check_contract`) — required before a file counts as a
+  contract (and, later, for compilation): rejects unsupported
+  `schema_version`, unknown fields, unknown kinds/ops/project types, and
+  missing or duplicate persistent `id`s. The app shows the gate result on
+  every load.
 
 ## 8. Non-functional requirements
 
@@ -226,7 +241,7 @@ existence, RDMP structural rules.
 ## 9. Acceptance criteria
 
 1. Re-authoring **SHARE-2213** as two self-contained groups (severe-DR; control)
-   reproduces `docs/examples/requirement.example.yaml`'s structure, and each group
+   reproduces `examples/requirement.example.yaml`'s structure, and each group
    drives Agent 2 to a **validating** build (matching the proven
    `assemble_*_2213` path).
 2. A **recruitment** single-group case (e.g. SHARE-2249) authored in the form

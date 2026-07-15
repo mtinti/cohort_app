@@ -50,3 +50,11 @@ Build groups in the form: add conditions, add nested INTERSECT or UNION
 subgroups, and add ordered exclusions. Use **Preview YAML** to review, **Download
 YAML** to export, or **Load a requirement.yaml** to bring one back in to edit.
 Use **Clone group** to start a similar cohort from a copy.
+
+Every group/container/condition in the export carries a persistent `id`, so
+criteria stay addressable across versions. Loading is two-mode: a file that
+fails the **strict contract gate** (unknown fields/kinds, wrong
+`schema_version`, missing ids) still opens as a **draft**, with every applied
+coercion reported — nothing is ever changed silently. See `plan.md` for where
+this is heading (portable cohort contracts, per-site bindings, deterministic
+compilation).

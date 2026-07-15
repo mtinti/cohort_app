@@ -5,9 +5,12 @@
 #   each GROUP is self-contained. inclusion is a CONTAINER combined with
 #   op: AND (INTERSECT, all of) or OR (UNION, any of), and may nest. exclusions
 #   are an ORDERED list removed in turn.
-#   Leaf condition kinds: demographic / codes / note.
+#   Leaf condition kinds: demographic / codes / note (+ sample when the
+#   COHORT_ENABLE_SAMPLES UI flag is on — the schema accepts it everywhere).
 # Codes are verbatim; `source` names the dataset the codes apply to.
-# (Biobank sample / event-anchored selection lives on the share_cohort_builder branch.)
+# Every group/container/condition carries a persistent `id` so criteria stay
+# addressable across versions (diffs, review comments, feasibility errors).
+# This file passes the strict contract gate (check_contract == []).
 # ============================================================================
 
 project: Example cohort request (edit me)
@@ -15,82 +18,102 @@ project_type: recruitment
 target_n: approx. N per group
 schema_version: 1
 cohorts:
-- name: Group A — cases
+- id: 846634d9
+  name: Group A — cases
   inclusion:
+    id: 6f1bab3f
     op: AND
     members:
-    - kind: demographic
+    - id: 6c5042f7
+      kind: demographic
       label: Adults
       source: Demographics
       age_min: 18
       age_max: 80
       sex: both
-    - op: OR
+    - id: f8797474
+      op: OR
       label: Condition of interest (any source)
       members:
-      - kind: codes
+      - id: e7fcceca
+        kind: codes
         label: Condition in hospital data
         source: hospital
         icd:
         - A00
-      - kind: codes
+      - id: c0f5711c
+        kind: codes
         label: Condition in primary care
         source: primary_care
         read:
         - X1111
-    - op: OR
+    - id: e6f49540
+      op: OR
       label: A second condition (placeholder)
       members:
-      - kind: codes
+      - id: c9dc01bd
+        kind: codes
         label: Second condition (primary care)
         source: primary_care
         read:
         - X2222
-      - kind: codes
+      - id: a5228364
+        kind: codes
         label: Second condition (hospital)
         source: hospital
         icd:
         - A01
   exclusions:
-  - kind: codes
+  - id: 1ebe6893
+    kind: codes
     label: Comorbidity to exclude
     source: hospital
     icd:
     - B00
-  - kind: note
+  - id: 89b3767b
+    kind: note
     label: Other criterion (no code yet)
     text: Describe any criterion that has no agreed code.
-- name: Group B — controls
+- id: 2ee31e52
+  name: Group B — controls
   inclusion:
+    id: 86cacfd8
     op: AND
     members:
-    - kind: demographic
+    - id: '96937968'
+      kind: demographic
       label: Adults
       source: Demographics
       age_min: 18
       age_max: 80
       sex: both
-    - op: OR
+    - id: 229fe209
+      op: OR
       label: Condition of interest (any source)
       members:
-      - kind: codes
+      - id: d63db0e8
+        kind: codes
         label: Condition in hospital data
         source: hospital
         icd:
         - A00
-      - kind: codes
+      - id: cc267eb4
+        kind: codes
         label: Condition in primary care
         source: primary_care
         read:
         - X1111
   exclusions:
-  - kind: codes
+  - id: 32f14fbf
+    kind: codes
     label: Exclude a condition variant
     source: primary_care
     read:
     - X3333
-  - kind: codes
+  - id: a2bdb1df
+    kind: codes
     label: Comorbidity to exclude
     source: hospital
     icd:
     - B00
+

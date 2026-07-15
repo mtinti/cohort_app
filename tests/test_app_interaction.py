@@ -18,6 +18,15 @@ def download_yaml(page):
     return yaml.safe_load(open(di.value.path()))
 
 
+def strip_ids(o):
+    """Drop persistent `id`s (random per session) to compare content only."""
+    if isinstance(o, dict):
+        return {k: strip_ids(v) for k, v in o.items() if k != "id"}
+    if isinstance(o, list):
+        return [strip_ids(v) for v in o]
+    return o
+
+
 def test_app_loads_example(page):
     assert page.get_by_text("INCLUSION — base population").is_visible()
     # both example groups present in the sidebar selector
@@ -34,7 +43,8 @@ def test_yaml_preview_popup(page):
 
 def test_default_download_matches_contract(page):
     got = download_yaml(page)
-    assert got == S.to_contract(S.build_example())
+    assert strip_ids(got) == strip_ids(S.to_contract(S.build_example()))
+    assert S.check_contract(got) == []          # the app's own export passes the gate
 
 
 def test_add_group(page):
@@ -137,6 +147,8 @@ def test_load_yaml_populates_form(page, tmp_path):
     got = download_yaml(page)
     assert got["project"] == "Loaded Project"
     assert got["cohorts"][0]["name"] == "Loaded Group"
+    # the file has no persistent ids -> loads fine but is flagged as a DRAFT
+    assert page.get_by_text("does not pass the strict contract gate").is_visible()
 
 
 def test_blank_requirement_shows_validation(page):
