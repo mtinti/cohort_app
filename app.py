@@ -26,11 +26,12 @@ CSS = """
 <style>
 /* higher-contrast body text */
 .stApp, .stMarkdown p, .stMarkdown span, label, .stRadio, .stTextInput { color: #14161c; }
-/* thicker, higher-contrast bordered containers */
+/* cards: bordered containers, light fill, subtle depth (nesting = containment) */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-  border: 3px solid #3a3f4b !important;
-  border-radius: 10px !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid #aeb6c4 !important;
+  border-radius: 9px !important;
+  background: #fafbfd;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 /* high-contrast inline code tags  ([codes], [demographic] …) */
 .stMarkdown code {
@@ -46,28 +47,21 @@ input[aria-label="Group name"] {
   font-size: 1.5rem !important; font-weight: 700 !important; color: #14161c !important;
   padding: 0.5rem 0.7rem !important;
 }
-/* soft card fill so white rows sit on an off-white box (clearer boundaries) */
-div[data-testid="stVerticalBlockBorderWrapper"] { background: #fafbfd; }
-/* Make tree rows flush + full-height so connector rails form CONTINUOUS lines:
-   zero gaps/margins, stretch the columns and the label-column wrappers to the
-   row height so the stretching rail borders meet across rows. */
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0 !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: stretch !important; margin: 0 !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] { margin: 0 !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div { display: flex !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div > [data-testid="stVerticalBlock"],
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdown"],
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] { height: 100% !important; width: 100%; }
 /* colour-blind-safe section headers (Okabe-Ito blue vs orange) + icon + text */
 .sec-head { font-size: 1.15rem; font-weight: 700; padding: 8px 12px;
             border-radius: 6px; margin-bottom: 12px; }
 .sec-inc { background: #dce9f5; color: #0b3d66; border-left: 7px solid #0072B2; }
 .sec-exc { background: #fbe7d2; color: #6e3500; border-left: 7px solid #D55E00; }
-/* node "boxes" the tree branches connect into */
-.node, .node-c { display: inline-block; height: 28px; line-height: 26px;
-  padding: 0 10px; border: 1px solid #cfd4de; border-radius: 6px;
-  background: #ffffff; color: #14161c; white-space: nowrap; }
-.node-c { background: #eef1f6; border-color: #aeb6c4; }   /* AND/OR containers, tinted */
+/* card headers: op badge for containers (blue AND vs green OR), bold leaf title */
+.op-badge { display: inline-block; font-weight: 700; padding: 2px 10px;
+            border-radius: 6px; font-size: 0.95em; }
+.op-and { background: #dce9f5; color: #0b3d66; border: 1px solid #0072B2; }
+.op-or  { background: #d9f2e8; color: #0b4d3d; border: 1px solid #009E73; }
+.leaf-head { font-weight: 650; }
+.leaf-body { color: #3a3f4b; font-size: 0.92em; margin: 0 0 2px 2px; line-height: 1.55; }
+/* tighter vertical rhythm inside cards (header row ~touching its body) */
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: center !important; }
 /* dialog: clear border + readable, bordered fields */
 div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !important;
                      box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
@@ -162,39 +156,52 @@ def _esc(s):
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _when_txt(n):
+def _when_lines(n):
     w = n.get("when") or {}
-    bits = []
+    out = []
     win = w.get("window") or {}
     if win.get("from") or win.get("to"):
-        bits.append(f"window {_esc(win.get('from', '…'))}→{_esc(win.get('to', '…'))}")
+        out.append(f"⏱ window {_esc(win.get('from', '…'))} → {_esc(win.get('to', '…'))}")
     a = w.get("anchor")
     if a:
         wi = a.get("within") or {}
         within = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
-        bits.append(f"{a.get('direction', '?')} {a.get('event', {}).get('occurrence', 'first')} "
-                    f"{_esc(a.get('event', {}).get('source', '?'))} event{within}")
-    return (" · ⏱ " + "; ".join(bits)) if bits else ""
+        ev = a.get("event", {})
+        out.append(f"⏱ {a.get('direction', '?')} the {ev.get('occurrence', 'first')} "
+                   f"<b>{_esc(ev.get('source', '?'))}</b> event "
+                   f"({_esc(', '.join(ev.get('codes', [])))}){within}")
+    return out
 
 
-def summary_html(n):
+def header_html(n):
+    """Card header: op badge for containers, kind chip + label for leaves."""
     if n.get("node") == "container":
         op = n["op"]
-        head = (f"<b>{OP_LABEL[op]}</b> <span style='color:#5b6270;font-weight:400;font-size:0.88em'>"
-                f"({OP_MEAN[op]})</span>")
-        return head + (f" · {_esc(n['label'])}" if n.get("label") else "")
+        cls = "op-and" if op == "AND" else "op-or"
+        head = (f"<span class='op-badge {cls}'>{OP_LABEL[op]}</span> "
+                f"<span style='color:#5b6270;font-size:0.88em'>{OP_MEAN[op]}</span>")
+        return head + (f" · <b>{_esc(n['label'])}</b>" if n.get("label") else "")
     k = n["kind"]
-    lbl = _esc(n.get("label") or k)
-    tag = f"<code>[{k}]</code> "
+    return f"<code>[{k}]</code> <span class='leaf-head'>{_esc(n.get('label') or k)}</span>"
+
+
+def body_html(n):
+    """Card body: the leaf's details, one line per aspect."""
+    k = n["kind"]
+    lines = []
     if k == "codes":
-        vocs = [f"{f.upper().replace('_', ' ')} {_esc(', '.join(n[f]))}"
-                for f in ("icd", "read", "bnf", "drug_names") if n.get(f)]
-        return tag + f"{lbl} — {_esc(n.get('source', '?'))} · " + " · ".join(vocs) + _when_txt(n)
-    if k == "measure":
-        return tag + (f"{lbl} — {_esc(n.get('source', '?'))} · {_esc(n.get('measure', '?'))} "
-                      f"{_esc(n.get('op', '?'))} {_s(n.get('value'))} {_esc(n.get('unit', ''))}"
-                      + _when_txt(n))
-    if k == "demographic":
+        lines.append(f"source: <b>{_esc(n.get('source', '?'))}</b>")
+        for f, lab in (("icd", "ICD-10"), ("read", "READ"), ("bnf", "BNF"),
+                       ("drug_names", "Drug names")):
+            if n.get(f):
+                lines.append(f"{lab}: {_esc(', '.join(n[f]))}")
+        lines += _when_lines(n)
+    elif k == "measure":
+        lines.append(f"source: <b>{_esc(n.get('source', '?'))}</b> · "
+                     f"{_esc(n.get('measure', '?'))} {_esc(n.get('op', '?'))} "
+                     f"{_s(n.get('value'))} {_esc(n.get('unit', ''))}")
+        lines += _when_lines(n)
+    elif k == "demographic":
         bits = []
         if n.get("age_min") is not None or n.get("age_max") is not None:
             bits.append(f"age {_s(n.get('age_min'))}–{_s(n.get('age_max'))}")
@@ -204,79 +211,55 @@ def summary_html(n):
             bits.append(_esc(n["residence"]))
         if n.get("simd"):
             bits.append(f"SIMD {_esc(n['simd'])}")
-        return tag + lbl + (f" — {', '.join(bits)}" if bits else "")
-    if k == "sample":
+        if bits:
+            lines.append(" · ".join(bits))
+    elif k == "sample":
         se = n["sample_event"]
         ev = se["event"]
         wi = se.get("within") or {}
         w = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
-        return tag + (f"{lbl} — ≥1 sample {se['direction']} "
-                      f"{ev['occurrence']} {_esc(ev['type'])} index{w}")
-    return tag + lbl
+        lines.append(f"≥1 sample {se['direction']} the {ev['occurrence']} "
+                     f"<b>{_esc(ev['type'])}</b> event "
+                     f"({_esc(', '.join(ev.get('codes', [])))}){w}")
+    elif k == "note":
+        lines.append(f"<i>{_esc(n.get('text', ''))}</i>")
+    return "<br>".join(lines)
 
 
 # ----------------------------- tree rendering ------------------------------
-# Connector rails are drawn as CSS borders that STRETCH to the full row height
-# (percent/absolute top:0;bottom:0), and the inter-row gap+margins are zeroed
-# (see CSS), so they form CONTINUOUS vertical lines regardless of row height.
-LINE, H, EXT = "#8a93a3", 40, 30   # EXT: how far rails over-extend past the row to bridge inter-row gaps
-
-
-def _v():       # vertical line spanning the row and overlapping into neighbours
-    return (f"<div style='position:relative;width:22px;align-self:stretch'>"
-            f"<div style='position:absolute;left:10px;top:-{EXT}px;bottom:-{EXT}px;border-left:2px solid {LINE}'></div></div>")
-
-
-def _blank():
-    return "<div style='width:22px'></div>"
-
-
-def _elbow(is_last):
-    # top half over-extends UP to meet the row above; bottom half (if any) DOWN to the next
-    bottom = "" if is_last else (f"<div style='position:absolute;left:10px;top:50%;"
-                                 f"bottom:-{EXT}px;border-left:2px solid {LINE}'></div>")
-    return (f"<div style='position:relative;width:22px;align-self:stretch'>"
-            f"<div style='position:absolute;left:10px;top:-{EXT}px;bottom:50%;border-left:2px solid {LINE}'></div>"
-            f"<div style='position:absolute;left:10px;top:50%;width:12px;border-top:2px solid {LINE}'></div>"
-            f"{bottom}</div>")
-
-
-def _rail(flags, is_last):
-    return "".join(_v() if f else _blank() for f in flags) + _elbow(is_last)
-
-
-def render_member(g, n, flags, is_last, is_excl, sib, idx, is_root=False, top=False):
+# Every node is a CARD (bordered container): header row = badge/chip + label +
+# actions; body = the details (leaves) or the nested member cards (containers).
+# Nesting shows through containment, so no connector rails are needed.
+def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=False):
     is_c = n.get("node") == "container"
-    rail = "" if is_root else _rail(flags, is_last)
-    cls = "node-c" if is_c else "node"
-    label = (f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail}"
-             f"<div class='{cls}' style='align-self:center'>{summary_html(n)}</div></div>")
-    cols = st.columns([8, 0.6, 0.6, 0.6, 0.6, 0.6])
-    cols[0].markdown(label, unsafe_allow_html=True)
-    # ➕ lives on the CONTAINER's own row, so it is unambiguous which container you add into
-    if is_c and cols[1].button("➕", key=f"a{n['_id']}", help="add a condition or sub-container into THIS container"):
-        open_modal("add_to", {}, container=n["_id"])
-    if cols[2].button("✎", key=f"e{n['_id']}", help="edit"):
-        open_modal("edit_container" if is_c else "edit_leaf", n, id=n["_id"])
-    if not is_root and cols[3].button("✕", key=f"x{n['_id']}", help="remove"):
-        remove_node(g, n["_id"]); st.rerun()
-    if is_excl and top:
-        if cols[4].button("↑", key=f"u{n['_id']}") and idx > 0:
-            sib[idx - 1], sib[idx] = sib[idx], sib[idx - 1]; st.rerun()
-        if cols[5].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
-            sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
+    with st.container(border=True):
+        cols = st.columns([8, 0.6, 0.6, 0.6, 0.6, 0.6])
+        cols[0].markdown(header_html(n), unsafe_allow_html=True)
+        # ➕ lives on the CONTAINER's own header, so it is unambiguous which
+        # container you add into
+        if is_c and cols[1].button("➕", key=f"a{n['_id']}",
+                                   help="add a condition or sub-container into THIS container"):
+            open_modal("add_to", {}, container=n["_id"])
+        if cols[2].button("✎", key=f"e{n['_id']}", help="edit"):
+            open_modal("edit_container" if is_c else "edit_leaf", n, id=n["_id"])
+        if not is_root and cols[3].button("✕", key=f"x{n['_id']}", help="remove"):
+            remove_node(g, n["_id"]); st.rerun()
+        if is_excl and top:
+            if cols[4].button("↑", key=f"u{n['_id']}") and idx > 0:
+                sib[idx - 1], sib[idx] = sib[idx], sib[idx - 1]; st.rerun()
+            if cols[5].button("↓", key=f"d{n['_id']}") and idx < len(sib) - 1:
+                sib[idx + 1], sib[idx] = sib[idx], sib[idx + 1]; st.rerun()
 
-    if is_c:
-        child_flags = [] if is_root else flags + [not is_last]
-        m = n["members"]
-        if not m:        # visible placeholder so an empty container isn't invisible
-            rail2 = _rail(child_flags, True)
-            st.markdown(f"<div style='display:flex;align-items:stretch;min-height:{H}px'>{rail2}"
-                        f"<div style='align-self:center;color:#8a8f9c;font-style:italic'>"
-                        f"empty {OP_LABEL[n['op']]} container ({OP_MEAN[n['op']]}) — use ➕ "
-                        f"on the row above to add</div></div>", unsafe_allow_html=True)
-        for j, ch in enumerate(m):
-            render_member(g, ch, child_flags, j == len(m) - 1, is_excl, m, j)
+        if is_c:
+            if not n["members"]:       # visible placeholder so an empty container isn't invisible
+                st.caption(f"empty {OP_LABEL[n['op']]} container ({OP_MEAN[n['op']]}) "
+                           "— use ➕ in the header above to add")
+            for j, ch in enumerate(n["members"]):
+                render_member(g, ch, is_excl, n["members"], j)
+        else:
+            body = body_html(n)
+            if body:
+                st.markdown(f"<div class='leaf-body'>{body}</div>", unsafe_allow_html=True)
 
 
 # ----------------------------- dialogs -------------------------------------
@@ -454,7 +437,7 @@ def add_dialog():
     tgt = st.session_state.modal["container"]
     excl = tgt == "__EXCL__"
     where = ("the <b>EXCLUSIONS</b> list (each removed in order)" if excl
-             else summary_html(find_node(group(), tgt)))
+             else header_html(find_node(group(), tgt)))
     st.markdown("Add into &nbsp; " + where, unsafe_allow_html=True)
     st.write("")
     # condition = a single criterion (white button)
@@ -503,8 +486,14 @@ def sidebar():
         types = list(S.UI_PROJECT_TYPES)
         if req["project_type"] not in types:
             types.append(req["project_type"])
+        TYPE_HELP = {"recruitment": "identify people to contact / recruit (e.g. a trial)",
+                     "registry": "a cohort for a study or registry dataset",
+                     "biobank": "sample-anchored selection (biobank projects)",
+                     "other": "anything else — a hint for the downstream builder"}
         req["project_type"] = st.radio("Type", types,
-                                       index=types.index(req["project_type"]), horizontal=True)
+                                       index=types.index(req["project_type"]),
+                                       captions=[TYPE_HELP.get(t, "not a standard type")
+                                                 for t in types])
         req["target_n"] = st.text_input("Target N", req["target_n"])
         req["ticket"] = st.text_input("Ticket (optional)", req.get("ticket", ""))
 
@@ -613,7 +602,7 @@ def main():
     with st.container(border=True):
         st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
                     unsafe_allow_html=True)
-        render_member(g, g["inclusion"], [], True, False, None, None, is_root=True)
+        render_member(g, g["inclusion"], is_root=True)
         if st.button("➕ Add inclusion"):
             open_modal("add_to", {}, container=g["inclusion"]["_id"])
 
@@ -622,9 +611,8 @@ def main():
     with st.container(border=True):
         st.markdown("<div class='sec-head sec-exc'>✕ EXCLUSIONS — removed from the population, in order · REMOVE ↓</div>",
                     unsafe_allow_html=True)
-        n_ex = len(g["exclusions"])
         for i, m in enumerate(g["exclusions"]):
-            render_member(g, m, [], i == n_ex - 1, True, g["exclusions"], i, top=True)
+            render_member(g, m, True, g["exclusions"], i, top=True)
         if st.button("➕ Add exclusion"):
             open_modal("add_to", {}, container="__EXCL__")
 
