@@ -26,13 +26,6 @@ CSS = """
 <style>
 /* higher-contrast body text */
 .stApp, .stMarkdown p, .stMarkdown span, label, .stRadio, .stTextInput { color: #14161c; }
-/* cards: bordered containers, light fill, subtle depth (nesting = containment) */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-  border: 1px solid #aeb6c4 !important;
-  border-radius: 9px !important;
-  background: #fafbfd;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-}
 /* high-contrast inline code tags  ([codes], [demographic] …) */
 .stMarkdown code {
   background: #e6e9f0 !important;
@@ -59,9 +52,31 @@ input[aria-label="Group name"] {
 .op-or  { background: #d9f2e8; color: #0b4d3d; border: 1px solid #009E73; }
 .leaf-head { font-weight: 650; }
 .leaf-body { color: #3a3f4b; font-size: 0.92em; margin: 0 0 2px 2px; line-height: 1.55; }
+/* NOTE: streamlit >= 1.58 has no stVerticalBlockBorderWrapper — bordered
+   containers are stLayoutWrapper > stVerticalBlock. Card-header rows are
+   identified by OUR classes (.op-badge / .leaf-head in the first column), so
+   these rules touch nothing else (not dialogs, not the sidebar).
+   The title column flexes; the ACTION columns keep a FIXED width at every
+   viewport size, so the ➕ ✎ ✕ glyphs stay centred in their buttons instead
+   of shrinking off-centre on narrow pages. */
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .op-badge),
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .leaf-head) {
+  align-items: center !important; flex-wrap: nowrap !important; gap: 0.45rem !important; }
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .op-badge) > div[data-testid="stColumn"]:first-child,
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .leaf-head) > div[data-testid="stColumn"]:first-child {
+  flex: 1 1 auto !important; min-width: 0 !important; }
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .op-badge) > div[data-testid="stColumn"]:not(:first-child),
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .leaf-head) > div[data-testid="stColumn"]:not(:first-child) {
+  flex: 0 0 2.6rem !important; width: 2.6rem !important; min-width: 2.6rem !important; }
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .op-badge) > div[data-testid="stColumn"]:not(:first-child) :is([data-testid="stElementContainer"], [class*="stButton"]),
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .leaf-head) > div[data-testid="stColumn"]:not(:first-child) :is([data-testid="stElementContainer"], [class*="stButton"]) {
+  width: 100% !important; }
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .op-badge) button,
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:first-child .leaf-head) button {
+  width: 100% !important; min-height: 2.2rem !important; padding: 0.15rem 0 !important;
+  display: inline-flex; align-items: center; justify-content: center; }
 /* tighter vertical rhythm inside cards (header row ~touching its body) */
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: center !important; }
+div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
 /* dialog: clear border + readable, bordered fields */
 div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !important;
                      box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
