@@ -181,3 +181,33 @@ def test_seal_contract_flow(page):
     settle(page)
     assert page.get_by_text("body CHANGED since sealing").is_visible()
     assert S.hash_status(download_yaml(page)) == "changed"
+
+
+def test_vocab_fields_follow_source(page):
+    # editing the example 'Condition in hospital data' leaf (icd=[A00]):
+    # ✎ order in the tree: root, Adults, OR container, hospital codes, ...
+    page.get_by_role("button", name="✎").nth(3).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_role("textbox", name="ICD-10").count() == 1
+    # switch source hospital_admissions -> prescribing (2nd combobox; 1st is Kind)
+    dlg.locator("[data-baseweb='select']").nth(1).click()
+    settle(page, 400)
+    page.get_by_role("option", name="prescribing").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    # only the legal vocab fields are editable now…
+    assert dlg.get_by_role("textbox", name="ICD-10").count() == 0
+    assert dlg.get_by_role("textbox", name="BNF").count() == 1
+    assert dlg.get_by_role("textbox", name="Drug names").count() == 1
+    # …and the carried-over ICD codes are surfaced, never silently dropped
+    assert "not legal" in dlg.inner_text()
+    dlg.get_by_role("button", name="🗑 Remove the ICD-10 codes").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert "not legal" not in dlg.inner_text()
+    dlg.get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    leaf = got["cohorts"][0]["inclusion"]["members"][1]["members"][0]
+    assert leaf["source"] == "prescribing" and "icd" not in leaf

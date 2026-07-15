@@ -362,15 +362,25 @@ def leaf_dialog():
     elif k == "codes":
         _source_select(work, "codes")
         legal = R.vocabs_for(work["source"])
-        fields = [(f, v) for f, v in R.VOCAB_FIELDS.items() if v in legal or work.get(f)]
         labels = {"icd": "ICD-10", "read": "READ", "bnf": "BNF", "drug_names": "Drug names"}
-        cols = st.columns(2) if len(fields) > 1 else [st]
-        for i, (f, v) in enumerate(fields):
-            box = cols[i % len(cols)]
-            work[f] = _lines(box.text_area(labels[f], _join(work.get(f)), height=90))
-            if v not in legal and work.get(f):
-                box.warning(f"{labels[f]} codes are not legal for source '{work['source']}'")
+        # only the vocabularies the registry allows for this source are editable
+        shown = [f for f, v in R.VOCAB_FIELDS.items() if v in legal]
+        cols = st.columns(2) if len(shown) > 1 else [st]
+        for i, f in enumerate(shown):
+            work[f] = _lines(cols[i % len(cols)].text_area(labels[f], _join(work.get(f)),
+                                                           height=90))
         st.caption("one code/range per line · e.g. E11, F00-09")
+        # codes left over from a previous source are NEVER dropped silently —
+        # surface them with an explicit remove action
+        for f, v in R.VOCAB_FIELDS.items():
+            if v not in legal and work.get(f):
+                st.warning(f"this condition still carries {len(work[f])} {labels[f]} "
+                           f"code(s) — {', '.join(work[f][:5])}"
+                           f"{'…' if len(work[f]) > 5 else ''} — not legal for source "
+                           f"'{work['source']}'. Remove them, or switch the source back.")
+                if st.button(f"🗑 Remove the {labels[f]} codes", key=f"rm{f}{work['_id']}"):
+                    work[f] = []
+                    st.rerun()
         _timing_editor(work)
     elif k == "measure":
         _source_select(work, "measure")
