@@ -438,3 +438,75 @@ def test_contract_header_references_export(page):
         "extraction_spec": "https://example.org/extraction-spec"}
     assert got["contract"]["status"] == "agreed"
     assert S.check_contract(got) == []
+
+
+# ---------------------------------------------------------------------------
+# Consecutive-interaction regressions: widgets bound via value=/index= without
+# a stable key lose the SECOND change in a row (the rerun remounts the widget,
+# and the next post goes to the dead widget id). All widgets now use stable
+# keys — these tests do two changes back-to-back with nothing in between.
+# ---------------------------------------------------------------------------
+def sidebar(page):
+    return page.locator("[data-testid='stSidebar']")
+
+
+def test_consecutive_type_changes(page):
+    sidebar(page).get_by_text("registry", exact=True).click()
+    settle(page)
+    sidebar(page).get_by_text("other", exact=True).click()
+    settle(page)
+    assert download_yaml(page)["project_type"] == "other"
+
+
+def test_consecutive_group_switches(page):
+    sidebar(page).get_by_text("Group B — controls").click()
+    settle(page)
+    sidebar(page).get_by_text("Group A — cases").click()
+    settle(page)
+    assert page.get_by_role("textbox", name="Group name").input_value() == "Group A — cases"
+
+
+def test_consecutive_title_edits(page):
+    t = page.get_by_role("textbox", name="Title")
+    t.fill("first edit"); page.keyboard.press("Enter")
+    settle(page)
+    t = page.get_by_role("textbox", name="Title")
+    t.fill("second edit"); page.keyboard.press("Enter")
+    settle(page)
+    assert download_yaml(page)["project"] == "second edit"
+
+
+def test_consecutive_dialog_radio_changes(page):
+    page.get_by_role("button", name="✎").nth(1).click()        # 'Adults'
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("female", exact=True).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("male", exact=True).click()                # consecutive!
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][0]
+    assert leaf["sex"] == "male"
+
+
+def test_dialog_state_resets_between_opens(page):
+    # edit Adults -> change sex -> CANCEL; reopening must show the saved state,
+    # not the abandoned edit (dlg_* keys are wiped on every open)
+    page.get_by_role("button", name="✎").nth(1).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_text("female", exact=True).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+    settle(page)
+    page.get_by_role("button", name="✎").nth(1).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    checked = dlg.locator("input[type=radio]:checked")
+    # the Sex radio is the only radio group in the demographic dialog
+    assert dlg.get_by_text("any", exact=True).count() == 1
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][0]
+    assert leaf.get("sex") is None                              # 'any' is not exported

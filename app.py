@@ -81,6 +81,54 @@ def init():
     st.session_state.setdefault("modal", None)
     st.session_state.setdefault("work", None)
     st.session_state.setdefault("load_report", None)
+    # deferred widget-state syncs (widget keys may only be written BEFORE the
+    # widget is instantiated, so handlers queue them and init applies them)
+    if st.session_state.pop("_wipe_w", False):          # after Load / New
+        for k in [k for k in st.session_state if k.startswith("w_")]:
+            del st.session_state[k]
+    if "_pend_group" in st.session_state:               # after Add/Clone/Remove group
+        st.session_state["w_group"] = st.session_state.pop("_pend_group")
+
+
+# ----------------------------- keyed widgets --------------------------------
+# Every widget that displays app state uses a STABLE key and gets its value
+# from session state. Binding via `value=`/`index=` without a key makes the
+# widget's identity depend on the shown value, so the rerun after an edit
+# remounts it — and the NEXT consecutive interaction posts to the dead widget
+# and is silently dropped ("first click fails, second succeeds").
+def _init_choice(key, options, current):
+    if key not in st.session_state or st.session_state[key] not in options:
+        st.session_state[key] = current if current in options else options[0]
+
+
+def kselect(label, options, current, key, **kw):
+    options = list(options)
+    _init_choice(key, options, current)
+    return st.selectbox(label, options, key=key, **kw)
+
+
+def kradio(label, options, current, key, **kw):
+    options = list(options)
+    _init_choice(key, options, current)
+    return st.radio(label, options, key=key, **kw)
+
+
+def ktext(label, value, key, **kw):
+    if key not in st.session_state:
+        st.session_state[key] = "" if value is None else str(value)
+    return st.text_input(label, key=key, **kw)
+
+
+def karea(label, value, key, **kw):
+    if key not in st.session_state:
+        st.session_state[key] = value or ""
+    return st.text_area(label, key=key, **kw)
+
+
+def kcheck(label, value, key, **kw):
+    if key not in st.session_state:
+        st.session_state[key] = bool(value)
+    return st.checkbox(label, key=key, **kw)
 
 
 def group():
@@ -122,6 +170,8 @@ def replace_node(g, _id, new):
 def open_modal(mode, work, **extra):
     st.session_state.modal = {"mode": mode, **extra}
     st.session_state.work = copy.deepcopy(work)
+    for k in [k for k in st.session_state if k.startswith("dlg_")]:
+        del st.session_state[k]        # dialog widgets re-init from the fresh work copy
     st.rerun()
 
 
@@ -269,7 +319,7 @@ def _source_select(work, kind, label="Source (logical, from the registry)"):
     if cur and cur not in opts:          # loaded value the registry doesn't know
         opts = [cur] + opts
         st.warning(f"source '{cur}' is not in the registry — pick a logical source")
-    work["source"] = st.selectbox(label, opts, index=opts.index(cur) if cur in opts else 0)
+    work["source"] = kselect(label, opts, cur, key="dlg_src")
     desc = R.SOURCES.get(work["source"], {}).get("description")
     if desc:
         st.caption(desc)
@@ -280,35 +330,39 @@ def _timing_editor(work):
     with st.expander("⏱ Timing (optional)", expanded=bool(w.get("window") or w.get("anchor"))):
         win = dict(w.get("window") or {})
         c = st.columns(2)
-        f = c[0].text_input("Window from (YYYY-MM-DD)", win.get("from", ""))
-        t = c[1].text_input("Window to (YYYY-MM-DD)", win.get("to", ""))
+        with c[0]:
+            f = ktext("Window from (YYYY-MM-DD)", win.get("from", ""), key="dlg_w_from")
+        with c[1]:
+            t = ktext("Window to (YYYY-MM-DD)", win.get("to", ""), key="dlg_w_to")
         window = {}
         if f.strip():
             window["from"] = f.strip()
         if t.strip():
             window["to"] = t.strip()
         anchor = None
-        if st.checkbox("Anchor to a per-patient index event", value=bool(w.get("anchor"))):
+        if kcheck("Anchor to a per-patient index event", bool(w.get("anchor")),
+                  key="dlg_a_on"):
             a = w.get("anchor") or {}
             ev = a.get("event") or {}
-            srcs = R.sources_for("anchor")
-            src = st.selectbox("Index event source", srcs,
-                               index=srcs.index(ev["source"]) if ev.get("source") in srcs else 0)
-            vocabs = R.vocabs_for(src) or [""]
-            vocab = st.selectbox("Event vocabulary", vocabs,
-                                 index=vocabs.index(ev["vocab"]) if ev.get("vocab") in vocabs else 0)
-            occ = st.radio("Index date is the", S.OCCURRENCE,
-                           index=S.OCCURRENCE.index(ev.get("occurrence", "first")),
-                           horizontal=True, format_func=lambda o: f"{o} occurrence")
-            codes = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=70))
-            direction = st.radio("This condition happens", S.DIRECTION,
-                                 index=S.DIRECTION.index(a.get("direction", "before")),
-                                 horizontal=True, format_func=lambda d: f"{d} the index date")
+            src = kselect("Index event source", R.sources_for("anchor"),
+                          ev.get("source"), key="dlg_a_src")
+            vocab = kselect("Event vocabulary", R.vocabs_for(src) or [""],
+                            ev.get("vocab"), key="dlg_a_vocab")
+            occ = kradio("Index date is the", S.OCCURRENCE, ev.get("occurrence", "first"),
+                         key="dlg_a_occ", horizontal=True,
+                         format_func=lambda o: f"{o} occurrence")
+            codes = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
+                                 key="dlg_a_codes", height=70))
+            direction = kradio("This condition happens", S.DIRECTION,
+                               a.get("direction", "before"), key="dlg_a_dir",
+                               horizontal=True, format_func=lambda d: f"{d} the index date")
             wi = a.get("within") or {}
             cw = st.columns(2)
-            n = _int(cw[0].text_input("Within N (blank = any time)", _s(wi.get("n"))))
-            unit = cw[1].selectbox("Unit", S.WITHIN_UNITS,
-                                   index=S.WITHIN_UNITS.index(wi.get("unit", "months")))
+            with cw[0]:
+                n = _int(ktext("Within N (blank = any time)", _s(wi.get("n")), key="dlg_a_n"))
+            with cw[1]:
+                unit = kselect("Unit", S.WITHIN_UNITS, wi.get("unit", "months"),
+                               key="dlg_a_unit")
             anchor = {"event": {"source": src, "vocab": vocab, "codes": codes,
                                 "occurrence": occ, "label": ev.get("label", "")},
                       "direction": direction, "within": {"n": n, "unit": unit}}
@@ -321,24 +375,26 @@ def leaf_dialog():
     # offer the flag-gated UI kinds; a loaded contract may carry a kind the UI
     # doesn't offer for new conditions — keep it selectable so it stays editable
     kinds = list(S.UI_KINDS) if work["kind"] in S.UI_KINDS else [work["kind"]] + list(S.UI_KINDS)
-    nk = st.selectbox("Kind", kinds, index=kinds.index(work["kind"]))
+    nk = kselect("Kind", kinds, work["kind"], key="dlg_kind")
     if nk != work["kind"]:
         nid = work["_id"]
         work = S.new_leaf(nk, work.get("label", ""))
         work["_id"] = nid
         st.session_state.work = work
-    work["label"] = st.text_input("Label", work.get("label", ""))
+    work["label"] = ktext("Label", work.get("label", ""), key="dlg_label")
     k = work["kind"]
 
     if k == "demographic":
         _source_select(work, "demographic")
         c = st.columns(2)
-        work["age_min"] = _int(c[0].text_input("Age min", _s(work.get("age_min"))))
-        work["age_max"] = _int(c[1].text_input("Age max", _s(work.get("age_max"))))
+        with c[0]:
+            work["age_min"] = _int(ktext("Age min", _s(work.get("age_min")), key="dlg_agemin"))
+        with c[1]:
+            work["age_max"] = _int(ktext("Age max", _s(work.get("age_max")), key="dlg_agemax"))
         sex = work.get("sex") if work.get("sex") in S.SEXES else "any"
-        work["sex"] = st.radio("Sex", S.SEXES, index=S.SEXES.index(sex), horizontal=True)
-        work["residence"] = st.text_input("Residence", work.get("residence", ""))
-        work["simd"] = st.text_input("SIMD", work.get("simd", ""))
+        work["sex"] = kradio("Sex", S.SEXES, sex, key="dlg_sex", horizontal=True)
+        work["residence"] = ktext("Residence", work.get("residence", ""), key="dlg_res")
+        work["simd"] = ktext("SIMD", work.get("simd", ""), key="dlg_simd")
         if work.get("residence") or work.get("simd"):
             st.caption("⚠ residence/SIMD are free text — recorded in the contract but "
                        "not yet compilable (they will fail site feasibility)")
@@ -348,10 +404,11 @@ def leaf_dialog():
         labels = {"icd": "ICD-10", "read": "READ", "bnf": "BNF", "drug_names": "Drug names"}
         # only the vocabularies the registry allows for this source are editable
         shown = [f for f, v in R.VOCAB_FIELDS.items() if v in legal]
-        cols = st.columns(2) if len(shown) > 1 else [st]
+        cols = st.columns(2) if len(shown) > 1 else [st.container()]
         for i, f in enumerate(shown):
-            work[f] = _lines(cols[i % len(cols)].text_area(labels[f], _join(work.get(f)),
-                                                           height=90))
+            with cols[i % len(cols)]:
+                work[f] = _lines(karea(labels[f], _join(work.get(f)),
+                                       key=f"dlg_codes_{f}", height=90))
         st.caption("one code/range per line · e.g. E11, F00-09")
         # codes left over from a previous source are NEVER dropped silently —
         # surface them with an explicit remove action
@@ -363,6 +420,7 @@ def leaf_dialog():
                            f"'{work['source']}'. Remove them, or switch the source back.")
                 if st.button(f"🗑 Remove the {labels[f]} codes", key=f"rm{f}{work['_id']}"):
                     work[f] = []
+                    st.session_state.pop(f"dlg_codes_{f}", None)   # widget wasn't drawn this run
                     st.rerun()
         _timing_editor(work)
     elif k == "measure":
@@ -372,37 +430,42 @@ def leaf_dialog():
         if cur and cur not in meas:
             meas = [cur] + meas
         c = st.columns([2, 1, 1, 1])
-        work["measure"] = c[0].selectbox("Measure", meas,
-                                         index=meas.index(cur) if cur in meas else 0)
-        work["op"] = c[1].selectbox("Op", S.CMP_OPS,
-                                    index=S.CMP_OPS.index(work.get("op", ">=")))
-        val = c[2].text_input("Value", _s(work.get("value")))
+        with c[0]:
+            work["measure"] = kselect("Measure", meas, cur, key="dlg_measure")
+        with c[1]:
+            work["op"] = kselect("Op", S.CMP_OPS, work.get("op", ">="), key="dlg_op")
+        with c[2]:
+            val = ktext("Value", _s(work.get("value")), key="dlg_value")
         try:
             work["value"] = float(val) if "." in val else int(val)
         except ValueError:
             work["value"] = None
-        work["unit"] = c[3].text_input("Unit", work.get("unit", ""))
+        with c[3]:
+            work["unit"] = ktext("Unit", work.get("unit", ""), key="dlg_unit")
         _timing_editor(work)
     elif k == "sample":
         st.caption("ⓘ Counts PEOPLE who have ≥1 sample positioned vs the event. The sample is not selected.")
         se = work["sample_event"]
         ev = se["event"]
-        ev["type"] = st.selectbox("Event type", S.EVENT_TYPES, index=S.EVENT_TYPES.index(ev["type"]))
+        ev["type"] = kselect("Event type", S.EVENT_TYPES, ev["type"], key="dlg_ev_type")
         st.caption(f"codes vocabulary for this event: **{S.EVENT_VOCAB[ev['type']]}**")
-        ev["occurrence"] = st.radio("Occurrence (defines the index date)", S.OCCURRENCE,
-                                    index=S.OCCURRENCE.index(ev["occurrence"]), horizontal=True)
-        ev["label"] = st.text_input("Event label", ev.get("label", ""))
-        ev["codes"] = _lines(st.text_area("Event codes (one per line)", _join(ev.get("codes")), height=80))
-        se["direction"] = st.radio("Sample is", S.DIRECTION,
-                                   index=S.DIRECTION.index(se["direction"]), horizontal=True)
+        ev["occurrence"] = kradio("Occurrence (defines the index date)", S.OCCURRENCE,
+                                  ev["occurrence"], key="dlg_ev_occ", horizontal=True)
+        ev["label"] = ktext("Event label", ev.get("label", ""), key="dlg_ev_label")
+        ev["codes"] = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
+                                   key="dlg_ev_codes", height=80))
+        se["direction"] = kradio("Sample is", S.DIRECTION, se["direction"],
+                                 key="dlg_s_dir", horizontal=True)
         wi = se.get("within") or {}
         cw = st.columns(2)
-        n = _int(cw[0].text_input("Within N (blank = any time in that direction)", _s(wi.get("n"))))
-        unit = cw[1].selectbox("Unit", S.WITHIN_UNITS,
-                               index=S.WITHIN_UNITS.index(wi.get("unit", "months")))
+        with cw[0]:
+            n = _int(ktext("Within N (blank = any time in that direction)",
+                           _s(wi.get("n")), key="dlg_s_n"))
+        with cw[1]:
+            unit = kselect("Unit", S.WITHIN_UNITS, wi.get("unit", "months"), key="dlg_s_unit")
         se["within"] = {"n": n, "unit": unit}
     elif k == "note":
-        work["text"] = st.text_area("Text", work.get("text", ""), height=90)
+        work["text"] = karea("Text", work.get("text", ""), key="dlg_text", height=90)
 
     b = st.columns(2)
     if b[0].button("Save", type="primary", use_container_width=True):
@@ -463,10 +526,9 @@ def add_dialog():
 @st.dialog("Container")
 def container_dialog():
     work = st.session_state.work
-    work["op"] = st.radio("How are the items in this container combined?", S.OPS,
-                          index=S.OPS.index(work["op"]),
-                          format_func=lambda o: OP_FULL[o])
-    work["label"] = st.text_input("Label (optional)", work.get("label", ""))
+    work["op"] = kradio("How are the items in this container combined?", S.OPS,
+                        work["op"], key="dlg_c_op", format_func=lambda o: OP_FULL[o])
+    work["label"] = ktext("Label (optional)", work.get("label", ""), key="dlg_c_label")
     b = st.columns(2)
     if b[0].button("Save", type="primary", use_container_width=True):
         replace_node(group(), work["_id"], work); close_modal(); st.rerun()
@@ -480,7 +542,7 @@ def sidebar():
     with st.sidebar:
         st.title("Health Cohort Builder")
         st.subheader("Project")
-        req["project"] = st.text_input("Title", req["project"])
+        req["project"] = ktext("Title", req["project"], key="w_title")
         # offer the flag-gated UI types; keep a loaded value the UI doesn't
         # offer visible rather than coercing it (validate() flags unknown ones)
         types = list(S.UI_PROJECT_TYPES)
@@ -490,19 +552,21 @@ def sidebar():
                      "registry": "a cohort for a study or registry dataset",
                      "biobank": "sample-anchored selection (biobank projects)",
                      "other": "anything else — a hint for the downstream builder"}
-        req["project_type"] = st.radio("Type", types,
-                                       index=types.index(req["project_type"]),
-                                       captions=[TYPE_HELP.get(t, "not a standard type")
-                                                 for t in types])
-        req["target_n"] = st.text_input("Target N", req["target_n"])
-        req["ticket"] = st.text_input("Ticket (optional)", req.get("ticket", ""))
+        req["project_type"] = kradio("Type", types, req["project_type"], key="w_ptype",
+                                     captions=[TYPE_HELP.get(t, "not a standard type")
+                                               for t in types])
+        req["target_n"] = ktext("Target N", req["target_n"], key="w_targetn")
+        req["ticket"] = ktext("Ticket (optional)", req.get("ticket", ""), key="w_ticket")
 
         with st.expander("📜 Contract header", expanded=bool(req.get("contract"))):
             hdr = dict(req.get("contract") or {})
-            hdr["requested_by"] = st.text_input("Requested by", hdr.get("requested_by", ""))
-            hdr["approved_by"] = st.text_input("Approved by", hdr.get("approved_by", ""))
-            ref = st.text_input("Extraction spec URI (optional)",
-                                (hdr.get("references") or {}).get("extraction_spec", ""))
+            hdr["requested_by"] = ktext("Requested by", hdr.get("requested_by", ""),
+                                        key="w_req_by")
+            hdr["approved_by"] = ktext("Approved by", hdr.get("approved_by", ""),
+                                       key="w_app_by")
+            ref = ktext("Extraction spec URI (optional)",
+                        (hdr.get("references") or {}).get("extraction_spec", ""),
+                        key="w_ref")
             if ref.strip():
                 hdr["references"] = {"extraction_spec": ref.strip()}
             else:
@@ -524,22 +588,25 @@ def sidebar():
         st.subheader("Groups")
         st.caption("each group is a complete, self-contained cohort definition")
         names = [g["name"] or f"Group {i+1}" for i, g in enumerate(req["cohorts"])]
-        st.session_state.sel = st.radio("group", range(len(names)),
-                                        format_func=lambda i: names[i],
-                                        index=min(st.session_state.sel, len(names) - 1),
-                                        label_visibility="collapsed")
+        st.session_state.sel = kradio("group", range(len(names)),
+                                      min(st.session_state.sel, len(names) - 1),
+                                      key="w_group", format_func=lambda i: names[i],
+                                      label_visibility="collapsed")
         c = st.columns(3)
         if c[0].button("➕ Add", use_container_width=True, help="add a new empty group"):
             req["cohorts"].append(S.new_group(f"Group {len(req['cohorts'])+1}"))
-            st.session_state.sel = len(req["cohorts"]) - 1; st.rerun()
+            st.session_state.sel = len(req["cohorts"]) - 1
+            st.session_state._pend_group = st.session_state.sel; st.rerun()
         if c[1].button("⧉ Clone", use_container_width=True,
                        help="duplicate this group as a starting point for a similar cohort"):
             clone = S.clone_group(req["cohorts"][st.session_state.sel])
             req["cohorts"].insert(st.session_state.sel + 1, clone)
-            st.session_state.sel += 1; st.rerun()
+            st.session_state.sel += 1
+            st.session_state._pend_group = st.session_state.sel; st.rerun()
         if c[2].button("🗑 Remove", use_container_width=True, disabled=len(req["cohorts"]) <= 1):
             req["cohorts"].pop(st.session_state.sel)
-            st.session_state.sel = 0; st.rerun()
+            st.session_state.sel = 0
+            st.session_state._pend_group = 0; st.rerun()
 
         st.divider()
         st.subheader("Output")
@@ -553,6 +620,7 @@ def sidebar():
         if st.button("New (blank requirement)", use_container_width=True):
             st.session_state.req = S.new_requirement()
             st.session_state.load_report = None
+            st.session_state._wipe_w = True         # widgets re-init from the new req
             st.session_state.sel = 0; st.rerun()
         st.markdown("**📁 Load a requirement.yaml**")
         up = st.file_uploader("Drag a .yaml here or browse", type=["yaml", "yml"],
@@ -569,6 +637,7 @@ def sidebar():
                                                     "draft": issues}
                     st.session_state.sel = 0
                     st.session_state._loaded_sig = sig
+                    st.session_state._wipe_w = True   # widgets re-init from the loaded req
                     st.rerun()
                 except Exception as e:
                     st.error(f"Could not load: {e}")
@@ -595,7 +664,9 @@ def main():
     g = group()
 
     st.markdown("### Group name")
-    g["name"] = st.text_input("Group name", g["name"], label_visibility="collapsed")
+    # per-group key: switching groups re-inits from that group's own name
+    g["name"] = ktext("Group name", g["name"], key=f"w_gname_{g['_id']}",
+                      label_visibility="collapsed")
     st.caption("ⓘ This group is one complete cohort: an inclusion set, "
                "then exclusions removed in order.")
 
