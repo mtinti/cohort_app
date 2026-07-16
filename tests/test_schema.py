@@ -342,3 +342,15 @@ def test_json_schema_file_in_sync():
 def test_json_schema_validates_example():
     jsonschema = __import__("pytest").importorskip("jsonschema")
     jsonschema.validate(S.to_contract(S.build_example()), S.json_schema())
+
+
+def test_validation_paths_point_to_position():
+    req = S.from_contract(_minimal_contract())
+    req["cohorts"][0]["inclusion"]["members"].append(
+        S.new_container("OR", members=[S.new_container("AND")]))   # empty, nested
+    req["cohorts"][0]["exclusions"].append(S.new_container("OR"))  # empty, top-level
+    errs = S.validate(req)
+    assert any("G › inclusion 2.1: this INTERSECT (all of) container is empty" in e
+               for e in errs)
+    assert any("G › exclusion 1: this UNION (any of) container is empty" in e
+               for e in errs)

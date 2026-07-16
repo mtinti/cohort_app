@@ -161,7 +161,7 @@ def test_blank_requirement_shows_validation(page):
 
 
 def test_seal_contract_flow(page):
-    page.get_by_text("📜 Contract header").click()      # open the expander
+    page.get_by_text("FINALIZE CONTRACT").click()      # open the expander
     settle(page)
     page.get_by_role("button", name=re.compile("Seal as agreed")).click()
     settle(page)
@@ -425,7 +425,7 @@ def test_draft_coercions_reported_on_load(page, tmp_path):
 
 
 def test_contract_header_references_export(page):
-    page.get_by_text("📜 Contract header").click()
+    page.get_by_text("FINALIZE CONTRACT").click()
     settle(page)
     page.get_by_role("textbox", name="Extraction spec URI (optional)").fill(
         "https://example.org/extraction-spec")
@@ -526,7 +526,7 @@ def test_ticket_names_download(page):
 
 
 def test_contract_parties_export(page):
-    page.get_by_text("📜 Contract header").click()
+    page.get_by_text("FINALIZE CONTRACT").click()
     settle(page)
     page.get_by_role("textbox", name="Requested by").fill("Dr Who")
     page.keyboard.press("Enter")
@@ -700,7 +700,7 @@ def test_anchor_occurrence_direction_unit(page):
 
 def test_seal_download_tamper_upload_cycle(page, tmp_path):
     # 1. seal the contract in the app
-    page.get_by_text("📜 Contract header").click()
+    page.get_by_text("FINALIZE CONTRACT").click()
     settle(page)
     page.get_by_role("button", name=re.compile("Seal as agreed")).click()
     settle(page)
@@ -735,7 +735,7 @@ def test_seal_download_tamper_upload_cycle(page, tmp_path):
     # The expander auto-opens when a header exists — only click it if closed.
     seal_btn = page.get_by_role("button", name=re.compile("Seal as agreed"))
     if not seal_btn.is_visible():
-        page.get_by_text("📜 Contract header").click()
+        page.get_by_text("FINALIZE CONTRACT").click()
         settle(page)
     seal_btn.click()
     settle(page)
@@ -758,3 +758,15 @@ def test_edit_root_container_op(page):
     got = download_yaml(page)
     assert got["cohorts"][0]["inclusion"]["op"] == "OR"
     assert page.get_by_text("UNION").first.is_visible()     # badge updated too
+
+
+def test_validation_message_and_ordinal_chips(page):
+    # adding an empty UNION exclusion: the error names its position, and the
+    # cards carry matching ordinal chips (1, 2, 2.1 …)
+    page.get_by_role("button", name=re.compile(r"Add exclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("UNION")).click()
+    settle(page)
+    assert page.get_by_text(re.compile(r"› exclusion 3: this UNION")).is_visible()
+    assert page.locator(".ord", has_text=re.compile(r"^2\.1$")).count() == 1  # nested chip
+    assert page.locator(".ord", has_text=re.compile(r"^3$")).count() >= 1    # the new exclusion

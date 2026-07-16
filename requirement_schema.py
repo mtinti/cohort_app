@@ -43,6 +43,7 @@ import registry as R
 ENABLE_SAMPLES = os.environ.get("COHORT_ENABLE_SAMPLES", "").lower() in ("1", "true", "yes", "on")
 
 OPS = ["AND", "OR"]
+OP_NAME = {"AND": "INTERSECT (all of)", "OR": "UNION (any of)"}   # UI vocabulary
 # Normative vocabularies (what the schema ACCEPTS — identical everywhere).
 KINDS = ["demographic", "codes", "measure", "sample", "note"]
 PROJECT_TYPES = ["recruitment", "registry", "biobank", "other"]
@@ -667,57 +668,61 @@ def check_contract(data):
 # Validation (basic shape on the UI tree — level 1; registry conformance is
 # level 2 = registry.check_sources; per-site feasibility is level 3).
 # ---------------------------------------------------------------------------
-def _validate_node(n, gname, errs):
+def _validate_node(n, gname, errs, path):
+    """`path` is the positional address shown in the UI cards, e.g.
+    'inclusion 2.1' = first child of the second top-level inclusion item."""
+    where = f"{gname} › {path}"
     if n.get("node") == "container":
         if n.get("op") not in OPS:
-            errs.append(f"{gname}: container op must be AND or OR.")
+            errs.append(f"{where}: container op must be AND or OR.")
         if not n.get("members"):
-            errs.append(f"{gname}: a {n.get('op', '?')} container has no members.")
-        for m in n.get("members", []):
-            _validate_node(m, gname, errs)
+            errs.append(f"{where}: this {OP_NAME.get(n.get('op'), '?')} container is "
+                        "empty — add at least one condition, or remove it.")
+        for i, m in enumerate(n.get("members", []), 1):
+            _validate_node(m, gname, errs, f"{path}.{i}")
         return
     k = n.get("kind")
     lbl = n.get("label") or k
     if k == "codes":
         if not any(n.get(f) for f in ("icd", "read", "bnf", "drug_names")):
-            errs.append(f"{gname}: codes condition '{lbl}' has no codes.")
-        _validate_when(n, gname, lbl, errs)
+            errs.append(f"{where}: codes condition '{lbl}' has no codes.")
+        _validate_when(n, where, lbl, errs)
     elif k == "measure":
         if n.get("value") is None:
-            errs.append(f"{gname}: measure '{lbl}' has no threshold value.")
+            errs.append(f"{where}: measure '{lbl}' has no threshold value.")
         if n.get("op") not in CMP_OPS:
-            errs.append(f"{gname}: measure '{lbl}' has an invalid comparison.")
-        _validate_when(n, gname, lbl, errs)
+            errs.append(f"{where}: measure '{lbl}' has an invalid comparison.")
+        _validate_when(n, where, lbl, errs)
     elif k == "demographic":
         a, b = n.get("age_min"), n.get("age_max")
         if a is not None and b is not None and a > b:
-            errs.append(f"{gname}: '{lbl}' has age_min > age_max.")
+            errs.append(f"{where}: '{lbl}' has age_min > age_max.")
         if n.get("sex") not in SEXES:
-            errs.append(f"{gname}: '{lbl}' sex must be one of: " + ", ".join(SEXES) + ".")
+            errs.append(f"{where}: '{lbl}' sex must be one of: " + ", ".join(SEXES) + ".")
     elif k == "sample":
         ev = n.get("sample_event", {}).get("event", {})
         if ev.get("type") not in EVENT_TYPES:
-            errs.append(f"{gname}: '{lbl}' has an invalid event type.")
+            errs.append(f"{where}: '{lbl}' has an invalid event type.")
         if ev.get("type") != "lab_result" and not ev.get("codes"):
-            errs.append(f"{gname}: '{lbl}' event needs at least one code.")
+            errs.append(f"{where}: '{lbl}' event needs at least one code.")
         if n.get("sample_event", {}).get("direction") not in DIRECTION:
-            errs.append(f"{gname}: '{lbl}' direction must be before or after.")
+            errs.append(f"{where}: '{lbl}' direction must be before or after.")
     elif k == "note":
         if not n.get("text", "").strip():
-            errs.append(f"{gname}: note '{lbl}' has no text.")
+            errs.append(f"{where}: note '{lbl}' has no text.")
 
 
-def _validate_when(n, gname, lbl, errs):
+def _validate_when(n, where, lbl, errs):
     w = n.get("when")
     if not isinstance(w, dict):
         return
     for k, v in (w.get("window") or {}).items():
         if v and not _DATE_RE.match(str(v)):
-            errs.append(f"{gname}: '{lbl}' window {k} must be an ISO date (YYYY-MM-DD).")
+            errs.append(f"{where}: '{lbl}' window {k} must be an ISO date (YYYY-MM-DD).")
     a = w.get("anchor")
     if isinstance(a, dict) and a.get("event"):
         if not a["event"].get("codes"):
-            errs.append(f"{gname}: '{lbl}' anchor event needs at least one code.")
+            errs.append(f"{where}: '{lbl}' anchor event needs at least one code.")
 
 
 def validate(req):
@@ -739,10 +744,13 @@ def validate(req):
         inc = g.get("inclusion")
         if not inc or not inc.get("members"):
             errs.append(f"{gname}: inclusion must have at least one condition.")
-        elif inc:
-            _validate_node(inc, gname, errs)
-        for m in g.get("exclusions", []):
-            _validate_node(m, gname, errs)
+        else:
+            if inc.get("op") not in OPS:
+                errs.append(f"{gname} › inclusion: container op must be AND or OR.")
+            for j, m in enumerate(inc.get("members", []), 1):
+                _validate_node(m, gname, errs, f"inclusion {j}")
+        for j, m in enumerate(g.get("exclusions", []), 1):
+            _validate_node(m, gname, errs, f"exclusion {j}")
     return errs
 
 

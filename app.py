@@ -53,6 +53,11 @@ input[aria-label="Group name"] {
 .op-and { background: #dce9f5; color: #0b3d66; border: 1px solid #0072B2; }
 .op-or  { background: #d9f2e8; color: #0b4d3d; border: 1px solid #009E73; }
 .leaf-head { font-weight: 650; }
+/* ordinal chip: the card's position (2.1 = child 1 of item 2) — validation
+   messages reference exactly these numbers */
+.ord { font-family: monospace; font-size: 0.82em; color: #44485a;
+       background: #eef1f6; border: 1px solid #c7ccd8; border-radius: 4px;
+       padding: 1px 7px; margin-right: 7px; }
 .leaf-body { color: #3a3f4b; font-size: 0.92em; margin: 0 0 2px 2px; line-height: 1.55; }
 /* NOTE: streamlit >= 1.58 has no stVerticalBlockBorderWrapper — bordered
    containers are stLayoutWrapper > stVerticalBlock. Card-header rows are
@@ -305,14 +310,16 @@ def body_html(n):
 # Every node is a CARD (bordered container): header row = badge/chip + label +
 # actions; body = the details (leaves) or the nested member cards (containers).
 # Nesting shows through containment, so no connector rails are needed.
-def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=False):
+def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=False,
+                  path=""):
     is_c = n.get("node") == "container"
     with st.container(border=True):
         # exactly the needed action columns, so buttons pack flush to the
         # card's right edge on every row (no phantom empty slots)
         n_btn = (1 if is_c else 0) + 1 + (0 if is_root else 1) + (2 if (is_excl and top) else 0)
         cols = st.columns([10 - 0.62 * n_btn] + [0.62] * n_btn)
-        cols[0].markdown(header_html(n), unsafe_allow_html=True)
+        ord_chip = f"<span class='ord'>{path}</span>" if path else ""
+        cols[0].markdown(ord_chip + header_html(n), unsafe_allow_html=True)
         i = 1
         # ➕ lives on the CONTAINER's own header, so it is unambiguous which
         # container you add into
@@ -339,7 +346,8 @@ def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=Fa
                 st.caption(f"empty {OP_LABEL[n['op']]} container ({OP_MEAN[n['op']]}) "
                            "— use ➕ in the header above to add")
             for j, ch in enumerate(n["members"]):
-                render_member(g, ch, is_excl, n["members"], j)
+                child_path = f"{path}.{j + 1}" if path else str(j + 1)
+                render_member(g, ch, is_excl, n["members"], j, path=child_path)
         else:
             body = body_html(n)
             if body:
@@ -592,7 +600,7 @@ def sidebar():
         req["target_n"] = ktext("Target N", req["target_n"], key="w_targetn")
         req["ticket"] = ktext("Ticket (optional)", req.get("ticket", ""), key="w_ticket")
 
-        with st.expander("📜 Contract header", expanded=bool(req.get("contract"))):
+        with st.expander("🔏 **FINALIZE CONTRACT**", expanded=bool(req.get("contract"))):
             hdr = dict(req.get("contract") or {})
             hdr["requested_by"] = ktext("Requested by", hdr.get("requested_by", ""),
                                         key="w_req_by")
@@ -717,7 +725,7 @@ def main():
         st.markdown("<div class='sec-head sec-exc'>✕ EXCLUSIONS — removed from the population, in order · REMOVE ↓</div>",
                     unsafe_allow_html=True)
         for i, m in enumerate(g["exclusions"]):
-            render_member(g, m, True, g["exclusions"], i, top=True)
+            render_member(g, m, True, g["exclusions"], i, top=True, path=str(i + 1))
         if st.button("➕ Add exclusion"):
             open_modal("add_to", {}, container="__EXCL__")
 
