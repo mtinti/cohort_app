@@ -354,3 +354,12 @@ def test_validation_paths_point_to_position():
                for e in errs)
     assert any("G › exclusion 1: this UNION (any of) container is empty" in e
                for e in errs)
+
+
+def test_notes_in_reports_positions():
+    c = S.to_contract(S.build_example())
+    notes = S.notes_in(c)
+    assert len(notes) == 1
+    nid, lbl, where = notes[0]
+    assert where == "Group A — cases › exclusion 2"
+    assert lbl == "Other criterion (no code yet)"

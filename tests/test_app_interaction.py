@@ -375,8 +375,10 @@ def test_remove_group_and_disabled_at_one(page):
 
 
 def test_notes_banner_then_compilable_after_removal(page):
-    # the example contains a `note` exclusion -> flagged not compilable
+    # the example contains a `note` exclusion -> flagged not compilable,
+    # and the banner names its position (Group A's note is exclusion 2)
     assert page.get_by_text("NOT deterministically compilable").is_visible()
+    assert page.get_by_text(re.compile(r"› exclusion 2 \[note\]")).is_visible()
     # remove the note (the last ✕ inside the exclusions of group A)
     row = page.locator("[data-testid='stHorizontalBlock']").filter(
         has_text="Other criterion (no code yet)").last

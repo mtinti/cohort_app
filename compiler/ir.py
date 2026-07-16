@@ -25,9 +25,9 @@ def precheck(contract, binding, draft=False):
     problems += ["[binding] " + e for e in check_binding(binding)]
     notes = S.notes_in(contract)
     if notes and not draft:
-        problems += [f"[notes] criterion {i} ('{lbl}'): `note` criteria never "
-                     "compile — resolve into coded criteria, or use draft mode "
-                     "for a non-executable preview" for i, lbl in notes]
+        problems += [f"[notes] criterion {i} ('{lbl}', at {where}): `note` criteria "
+                     "never compile — resolve into coded criteria, or use draft "
+                     "mode for a non-executable preview" for i, lbl, where in notes]
     if not problems:            # feasibility is only meaningful on a sane input
         feas = check_feasibility(contract, binding)
         if draft:               # notes were allowed above; don't double-report

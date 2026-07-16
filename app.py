@@ -739,9 +739,12 @@ def main():
         if reg:
             st.warning("Registry conformance:\n\n" + "\n".join(f"- {e}" for e in reg))
         if notes:
+            locs = " · ".join(f"{where} `[note]`" + (f" '{lbl}'" if lbl else "")
+                              for _, lbl, where in notes)
             st.info(f"ⓘ ready to review — {len(req['cohorts'])} group(s), but contains "
-                    f"{len(notes)} `note` criterion(s), so it is NOT deterministically "
-                    "compilable until they are resolved into coded criteria")
+                    f"{len(notes)} `note` criterion(s) ({locs}), so it is NOT "
+                    "deterministically compilable until they are resolved into "
+                    "coded criteria")
         elif not reg:
             st.success(f"✓ ready — {len(req['cohorts'])} cohort group(s), "
                        "deterministically compilable")

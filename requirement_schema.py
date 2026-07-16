@@ -755,21 +755,26 @@ def validate(req):
 
 
 def notes_in(contract_dict):
-    """Ids+labels of `note` leaves in a raw contract dict (block compilation)."""
+    """(id, label, position) of `note` leaves in a raw contract dict — the
+    position uses the same addressing as validate() and the UI ordinal chips,
+    e.g. 'Group A › exclusion 2'. Notes block compilation."""
     found = []
 
-    def member(d):
+    def member(d, path):
         if not isinstance(d, dict):
             return
-        if "op" in d or "members" in d:
-            for m in d.get("members") or []:
-                member(m)
+        if "kind" not in d and ("op" in d or "members" in d):
+            for i, m in enumerate(d.get("members") or [], 1):
+                member(m, f"{path}.{i}")
         elif d.get("kind") == "note":
-            found.append((d.get("id", "?"), d.get("label", "")))
+            found.append((d.get("id", "?"), d.get("label", ""), path))
     for g in (contract_dict or {}).get("cohorts") or []:
-        member(g.get("inclusion"))
-        for m in g.get("exclusions") or []:
-            member(m)
+        gname = g.get("name") or "?"
+        inc = g.get("inclusion") or {}
+        for i, m in enumerate(inc.get("members") or [], 1):
+            member(m, f"{gname} › inclusion {i}")
+        for j, m in enumerate(g.get("exclusions") or [], 1):
+            member(m, f"{gname} › exclusion {j}")
     return found
 
 
