@@ -744,3 +744,17 @@ def test_seal_download_tamper_upload_cycle(page, tmp_path):
     assert S.hash_status(got) == "ok"
     assert S.check_contract(got) == []
     assert got["cohorts"][0]["inclusion"]["members"][1]["members"][0]["icd"] == ["Z99"]
+
+
+def test_edit_root_container_op(page):
+    # the ROOT inclusion container is g['inclusion'] itself, not a member —
+    # regression: replace_node used to miss it, silently dropping the edit
+    page.get_by_role("button", name="✎").first.click()     # root INTERSECT
+    settle(page)
+    page.get_by_role("dialog").get_by_text("UNION — any of (OR)").click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    got = download_yaml(page)
+    assert got["cohorts"][0]["inclusion"]["op"] == "OR"
+    assert page.get_by_text("UNION").first.is_visible()     # badge updated too

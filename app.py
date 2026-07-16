@@ -184,6 +184,9 @@ def remove_node(g, _id):
 
 
 def replace_node(g, _id, new):
+    if g["inclusion"]["_id"] == _id:      # the ROOT container is not a member
+        g["inclusion"] = new
+        return
     hit = _find(g["inclusion"]["members"], _id) or _find(g["exclusions"], _id)
     if hit:
         hit[0][hit[1]] = new
