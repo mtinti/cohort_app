@@ -84,6 +84,11 @@ div[role="dialog"] { border: 2px solid #3a3f4b !important; border-radius: 12px !
                      box-shadow: 0 8px 30px rgba(0,0,0,0.25) !important; }
 div[role="dialog"] input, div[role="dialog"] textarea {
   border: 1px solid #8b91a3 !important; background: #ffffff !important; color: #14161c !important; }
+/* …but NOT the selectbox's internal 4px search input: bordering it draws a
+   tiny square with a blinking caret right after the selected value */
+div[role="dialog"] [data-baseweb="select"] input {
+  border: none !important; background: transparent !important;
+  caret-color: transparent !important; }
 div[role="dialog"] label, div[role="dialog"] p, div[role="dialog"] span { color: #14161c !important; }
 </style>
 """
