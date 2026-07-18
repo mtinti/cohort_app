@@ -72,6 +72,20 @@ CONTRACT_STATUSES = ["draft", "agreed"]
 # load as drafts but KEEP their version, so the gate keeps rejecting them.
 SCHEMA_VERSION = 3
 MIGRATABLE_VERSIONS = {1, 2}
+
+
+def _int_version(sv):
+    """Canonical integer schema version, or None if malformed.
+
+    JSON's data model has a single number type, so the generated JSON Schema
+    cannot distinguish 3 from 3.0 — mathematically integral numbers are
+    therefore accepted and canonicalized (validator consistency). Bools are
+    NOT numbers here (YAML true must never read as version 1), and neither
+    are strings, lists or mappings.
+    """
+    if isinstance(sv, bool) or not isinstance(sv, (int, float)):
+        return None
+    return int(sv) if float(sv).is_integer() else None
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEMOG_SRC = "demographics"
 
@@ -413,19 +427,20 @@ def from_contract(data, issues=None):
     rec = issues.append if issues is not None else (lambda m: None)
     data = data or {}
     sv = data.get("schema_version")
+    v = _int_version(sv)        # None for bool/str/list/... (never raises)
     sv_out = SCHEMA_VERSION
-    # type(sv) is int guards membership/equality against bool (True == 1),
-    # float (2.0 == 2) and unhashable values ([] would raise on `in`)
-    if type(sv) is not int or sv != SCHEMA_VERSION:
-        if type(sv) is int and sv in MIGRATABLE_VERSIONS:
-            rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
-                f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
-                "(and re-seal, if it was sealed) before use")
-        else:                   # unknown/future/malformed: must NOT be relabelled
-            sv_out = sv
-            rec(f"schema_version {sv!r} is not supported (this tool is v"
-                f"{SCHEMA_VERSION}; it migrates {sorted(MIGRATABLE_VERSIONS)}); "
-                "kept as-is — the strict gate will reject it")
+    if v == SCHEMA_VERSION:
+        if type(sv) is not int:            # e.g. 3.0 -> 3
+            rec(f"schema_version {sv!r} canonicalized to {SCHEMA_VERSION}")
+    elif v in MIGRATABLE_VERSIONS:
+        rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
+            f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
+            "(and re-seal, if it was sealed) before use")
+    else:                       # unknown/future/malformed: must NOT be relabelled
+        sv_out = sv
+        rec(f"schema_version {sv!r} is not supported (this tool is v"
+            f"{SCHEMA_VERSION}; it migrates {sorted(MIGRATABLE_VERSIONS)}); "
+            "kept as-is — the strict gate will reject it")
     pt = data.get("project_type", "recruitment")
     if pt not in PROJECT_TYPES:               # keep verbatim — validate() will flag it
         rec(f"unknown project_type {pt!r} (kept as authored)")
@@ -587,10 +602,11 @@ def check_contract(data):
 
     unknown(data, _TOP_KEYS, "top level")
     sv = data.get("schema_version")
-    # type(sv) is int: bool (True == 1) and float (3.0 == 3) must NOT pass
-    if type(sv) is not int or sv != SCHEMA_VERSION:
+    # integral numbers accepted (3.0 == 3, matching JSON Schema's const: 3);
+    # bools/strings/containers are rejected by _int_version
+    if _int_version(sv) != SCHEMA_VERSION:
         errs.append(f"unsupported schema_version {sv!r} "
-                    f"(supported: {SCHEMA_VERSION}, as an integer)")
+                    f"(supported: {SCHEMA_VERSION})")
     if data.get("project_type") not in PROJECT_TYPES:
         errs.append(f"project_type {data.get('project_type')!r} must be one of: "
                     + ", ".join(PROJECT_TYPES))

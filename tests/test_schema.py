@@ -525,7 +525,7 @@ def test_python_and_json_schema_agree_on_code_criteria():
 
 
 def test_malformed_schema_versions_never_crash_or_pass():
-    for sv in ([], {}, True, False, 2.0, 3.0, "3"):
+    for sv in ([], {}, True, False, "3"):
         c = _minimal_contract()
         c["schema_version"] = sv
         issues = []
@@ -539,3 +539,35 @@ def test_malformed_schema_versions_never_crash_or_pass():
     issues = []
     S.from_contract(c, issues)
     assert any("kept as-is" in w for w in issues)
+
+
+def test_integral_float_versions_match_json_semantics():
+    # JSON has one number type: 3.0 IS 3 there, so python agrees (and
+    # canonicalizes on load); 2.0 migrates like 2; bools stay excluded
+    c = _minimal_contract()
+    c["schema_version"] = 3.0
+    assert S.check_contract(c) == []
+    issues = []
+    req = S.from_contract(c, issues)
+    assert any("canonicalized to 3" in w for w in issues)
+    assert S.to_contract(req)["schema_version"] == 3
+    c["schema_version"] = 2.0
+    issues = []
+    req = S.from_contract(c, issues)
+    assert any("UPGRADED to v3" in w for w in issues)
+    assert S.to_contract(req)["schema_version"] == 3
+
+
+def test_python_and_json_schema_agree_on_versions():
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    schema = S.json_schema()
+    for sv in (3, 3.0, 2, True, "3", None):
+        c = _minimal_contract()
+        c["schema_version"] = sv
+        py = S.check_contract(c) == []
+        try:
+            jsonschema.validate(c, schema)
+            js = True
+        except jsonschema.ValidationError:
+            js = False
+        assert py == js, (sv, py, js)
