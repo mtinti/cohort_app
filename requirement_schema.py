@@ -293,16 +293,24 @@ def to_contract(req):
 # `contract` block), so an edit after approval is detectable. Canonical form:
 # sorted keys, compact separators, ensure_ascii (defined once, here).
 # ---------------------------------------------------------------------------
+def _sha(body):
+    canon = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def _body(contract_dict):
+    return {k: v for k, v in (contract_dict or {}).items() if k != "contract"}
+
+
 def body_hash(contract_dict):
-    body = {k: v for k, v in (contract_dict or {}).items() if k != "contract"}
+    body = _body(contract_dict)
     # canonical form includes the version-number policy: 3.0 IS 3, so both
     # must hash identically — otherwise loading a sealed contract whose
     # version gets canonicalized would invalidate its approval hash
     v = _int_version(body.get("schema_version"))
     if v is not None:
         body["schema_version"] = v
-    canon = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+    return _sha(body)
 
 
 def seal(req, approved_by=""):
@@ -321,11 +329,21 @@ def seal(req, approved_by=""):
 
 
 def hash_status(contract_dict):
-    """'ok' | 'changed' | None (no sealed header)."""
+    """'ok' | 'changed' | None (no sealed header).
+
+    Verifies against the canonical hash AND the legacy (pre-version-canonical)
+    rule, so contracts sealed before body_hash normalized 3.0 -> 3 still
+    verify. Sealing always writes the canonical hash.
+    """
     hdr = (contract_dict or {}).get("contract") or {}
-    if not hdr.get("body_sha256"):
+    stored = hdr.get("body_sha256")
+    if not stored:
         return None
-    return "ok" if body_hash(contract_dict) == hdr["body_sha256"] else "changed"
+    if body_hash(contract_dict) == stored:
+        return "ok"
+    if _sha(_body(contract_dict)) == stored:      # legacy-era seal
+        return "ok"
+    return "changed"
 
 
 # ---------------------------------------------------------------------------
@@ -437,9 +455,16 @@ def from_contract(data, issues=None):
     sv = data.get("schema_version")
     v = _int_version(sv)        # None for bool/str/list/... (never raises)
     sv_out = SCHEMA_VERSION
+    sealed = (isinstance(data.get("contract"), dict)
+              and data["contract"].get("body_sha256"))
     if v == SCHEMA_VERSION:
-        if type(sv) is not int:            # e.g. 3.0 -> 3
-            rec(f"schema_version {sv!r} canonicalized to {SCHEMA_VERSION}")
+        if type(sv) is not int:            # e.g. 3.0
+            if sealed:                     # NEVER alter a sealed body, even cosmetically
+                sv_out = sv
+                rec(f"schema_version {sv!r} left as-is (equivalent to "
+                    f"{SCHEMA_VERSION}): canonicalizing would alter the sealed body")
+            else:
+                rec(f"schema_version {sv!r} canonicalized to {SCHEMA_VERSION}")
     elif v in MIGRATABLE_VERSIONS:
         rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
             f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "

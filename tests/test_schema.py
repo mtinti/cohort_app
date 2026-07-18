@@ -583,9 +583,10 @@ def test_huge_integer_versions_do_not_crash():
     assert S.to_contract(req)["schema_version"] == 10 ** 1000
 
 
-def test_sealed_contract_survives_version_canonicalization():
+def test_sealed_contract_survives_float_version_roundtrip():
     # a sealed contract re-serialized with schema_version: 3.0 (JSON number
-    # semantics) must keep a valid approval hash through load canonicalization
+    # semantics): the sealed BODY is never altered on load, and the approval
+    # hash stays valid through a full load/export round-trip
     req = S.build_example()
     S.seal(req)
     c = S.to_contract(req)
@@ -594,8 +595,34 @@ def test_sealed_contract_survives_version_canonicalization():
     assert S.hash_status(c) == "ok"        # hash is version-canonical
     issues = []
     req2 = S.from_contract(c, issues)
-    assert any("canonicalized to 3" in w for w in issues)
+    assert any("left as-is" in w for w in issues)      # sealed: no canonicalization
     c2 = S.to_contract(req2)
-    assert c2["schema_version"] == 3
+    assert c2["schema_version"] == 3.0     # body byte-faithful
     assert S.hash_status(c2) == "ok"       # approval NOT invalidated
     assert S.check_contract(c2) == []
+    # unsealed contracts still canonicalize on load
+    c.pop("contract")
+    issues = []
+    req3 = S.from_contract(c, issues)
+    assert any("canonicalized to 3" in w for w in issues)
+    assert S.to_contract(req3)["schema_version"] == 3
+
+
+def test_legacy_era_seal_still_verifies():
+    # a contract sealed BEFORE body_hash became version-canonical stored a
+    # hash over the literal 3.0 body — it must still verify, incl. through a
+    # load/export round-trip, and re-sealing writes the canonical hash
+    req = S.build_example()
+    S.seal(req)
+    c = S.to_contract(req)
+    c["schema_version"] = 3.0
+    c["contract"]["body_sha256"] = S._sha(S._body(c))   # legacy rule
+    assert S.hash_status(c) == "ok"
+    assert S.check_contract(c) == []
+    req2 = S.from_contract(c, [])
+    c2 = S.to_contract(req2)
+    assert S.hash_status(c2) == "ok" and S.check_contract(c2) == []
+    S.seal(req2)                                        # re-seal -> canonical hash
+    c3 = S.to_contract(req2)
+    assert c3["contract"]["body_sha256"] == S.body_hash(c3)
+    assert S.hash_status(c3) == "ok"
