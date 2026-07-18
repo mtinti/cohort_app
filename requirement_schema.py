@@ -88,12 +88,12 @@ def new_demographic(label="", source=_DEMOG_SRC, age_min=None, age_max=None,
             "sex": sex, "residence": residence, "simd": simd}
 
 
-def new_codes(label="", source=None, icd=None, read=None, bnf=None, drug_names=None,
-              when=None):
+def new_codes(label="", source=None, icd=None, opcs=None, read=None, bnf=None,
+              drug_names=None, when=None):
     if source is None:
         source = R.sources_for("codes")[0]
     return {"_id": _id(), "node": "leaf", "kind": "codes", "label": label, "source": source,
-            "icd": icd or [], "read": read or [], "bnf": bnf or [],
+            "icd": icd or [], "opcs": opcs or [], "read": read or [], "bnf": bnf or [],
             "drug_names": drug_names or [], "when": when}
 
 
@@ -213,7 +213,7 @@ def _clean(n):
     elif k == "codes":
         if n.get("source"):
             out["source"] = n["source"]
-        for f in ("icd", "read", "bnf", "drug_names"):
+        for f in ("icd", "opcs", "read", "bnf", "drug_names"):
             if n.get(f):
                 out[f] = list(n[f])
         w = _clean_when(n.get("when"))
@@ -370,7 +370,7 @@ def _build_member(d, rec):
                                         d.get("age_min"), d.get("age_max"), sex,
                                         d.get("residence", ""), d.get("simd", "")), d)
     if k == "codes":
-        return _keep_id(new_codes(lbl, d.get("source", ""), d.get("icd"),
+        return _keep_id(new_codes(lbl, d.get("source", ""), d.get("icd"), d.get("opcs"),
                                   d.get("read"), d.get("bnf"), d.get("drug_names"),
                                   _load_when(d, rec, where)), d)
     if k == "measure":
@@ -447,7 +447,7 @@ _CONTAINER_KEYS = {"id", "op", "label", "members"}
 _LEAF_KEYS = {
     "demographic": {"id", "kind", "label", "source", "age_min", "age_max",
                     "sex", "residence", "simd"},
-    "codes": {"id", "kind", "label", "source", "icd", "read", "bnf",
+    "codes": {"id", "kind", "label", "source", "icd", "opcs", "read", "bnf",
               "drug_names", "when"},
     "measure": {"id", "kind", "label", "source", "measure", "op", "value",
                 "unit", "when"},
@@ -684,7 +684,7 @@ def _validate_node(n, gname, errs, path):
     k = n.get("kind")
     lbl = n.get("label") or k
     if k == "codes":
-        if not any(n.get(f) for f in ("icd", "read", "bnf", "drug_names")):
+        if not any(n.get(f) for f in ("icd", "opcs", "read", "bnf", "drug_names")):
             errs.append(f"{where}: codes condition '{lbl}' has no codes.")
         _validate_when(n, where, lbl, errs)
     elif k == "measure":
@@ -811,8 +811,9 @@ def json_schema():
                         "age_min": {"type": "integer"}, "age_max": {"type": "integer"},
                         "sex": {"enum": SEXES}, "residence": {"type": "string"},
                         "simd": {"type": "string"}},
-        "codes": {"source": {"type": "string"}, "icd": codes_list, "read": codes_list,
-                  "bnf": codes_list, "drug_names": codes_list, "when": when},
+        "codes": {"source": {"type": "string"}, "icd": codes_list, "opcs": codes_list,
+                  "read": codes_list, "bnf": codes_list, "drug_names": codes_list,
+                  "when": when},
         "measure": {"source": {"type": "string"}, "measure": {"type": "string"},
                     "op": {"enum": CMP_OPS}, "value": {"type": "number"},
                     "unit": {"type": "string"}, "when": when},

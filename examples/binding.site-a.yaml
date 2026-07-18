@@ -18,7 +18,7 @@ sources:
     catalogue: HospitalAdmissions
     patient_id_column: patient_id
     date_column: admit_date
-    code_columns: {icd10: icd_code}
+    code_columns: {icd10: icd_code, opcs4: op_code}
   gp_events:
     table: gp_events
     catalogue: GPEvents

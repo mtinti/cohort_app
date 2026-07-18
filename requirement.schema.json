@@ -204,6 +204,13 @@
               },
               "minItems": 1
             },
+            "opcs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
             "read": {
               "type": "array",
               "items": {

@@ -16,7 +16,7 @@ sources:
     catalogue: SITEB_SMR01
     patient_id_column: chi
     date_column: admission_date
-    code_columns: {icd10: main_condition}
+    code_columns: {icd10: main_condition, opcs4: main_operation}
   gp_events:
     table: gp
     catalogue: SITEB_GP

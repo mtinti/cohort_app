@@ -137,9 +137,14 @@ container and leaf carries a persistent `id` (as groups do).
 **`kind: demographic`** — `source` (usually `SHARE_Demography`), `age_min`,
 `age_max` (int|null), `sex`, `residence`, `simd` (strings), `label`.
 
-**`kind: codes`** — `source` (one data source/catalogue, e.g. `SMR01`, `GP`,
-`PIS`), `label`, and the relevant code lists **verbatim**: `icd[]`, `read[]`,
-`bnf[]`, `drug_names[]` (only those that apply).
+**`kind: codes`** — `source` (a logical registry source), `label`, and the
+relevant code lists **verbatim**: `icd[]`, `opcs[]`, `read[]`, `bnf[]`,
+`drug_names[]` (only those that apply). Codes are structurally CONTROLLED
+(no descriptions): each vocabulary defines allowed forms in `sources.yaml`.
+ICD-10/OPCS-4 accept chapter (`F`), block range (`F00-F09`, cross-letter
+`C00-D48` — ICD chapters cross letters), category (`F02`) and subcategory
+(`F02.3`, the maximum depth); dots are presentational (matching strips them
+on both sides).
 
 **`kind: sample`** — `label`, plus a `sample_event` (see §5.5). Means "the person
 has **≥1 biobank sample** positioned in time relative to the event." We count

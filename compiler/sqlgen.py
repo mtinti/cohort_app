@@ -14,48 +14,71 @@ from .binding import CompileError, src
 from .feasibility import EVENT_TYPE_VOCAB
 from .ir import DRAFT_BANNER, build_ir, precheck, provenance
 
-_ICD_RANGE = re.compile(r"^([A-Z])(\d{2})-(\d{2})$")
+_RANGE = re.compile(r"^([A-Z])([0-9]{2})-([A-Z])?([0-9]{2})$")
 
 
 def _q(s):
     return "'" + str(s).replace("'", "''") + "'"
 
 
+def _after(hi):
+    """Exclusive upper bound of a 3-char block endpoint: D48->D49, D99->E00.
+    None when there is nothing after (Z99)."""
+    n = int(hi[1:]) + 1
+    if n == 100:
+        return None if hi[0] == "Z" else chr(ord(hi[0]) + 1) + "00"
+    return f"{hi[0]}{n:02d}"
+
+
 def match_atoms(vocab, codes):
-    """Codes -> [(mode, value)] match atoms, per registry semantics."""
+    """Codes -> match atoms, per registry semantics: ('prefix'|'exact_ci', v)
+    or ('span', lo, hi) for block ranges (F00-F09 / cross-letter C00-D48 —
+    ICD-10 chapters cross letters, so spans compare strings, not prefixes)."""
     spec = R.VOCABULARIES.get(vocab)
     if spec is None:
         raise CompileError([f"unknown vocabulary '{vocab}'"])
     atoms = []
     for code in codes:
-        code = str(code).strip()
-        m = _ICD_RANGE.match(code)
+        code = R.normalize_code(vocab, code)
+        m = _RANGE.match(code)
         if m:
-            if spec.get("range") != "numeric_suffix":
-                raise CompileError([f"vocabulary '{vocab}' does not define range "
-                                    f"expansion; cannot compile '{code}'"])
-            letter, lo, hi = m.group(1), int(m.group(2)), int(m.group(3))
+            if spec.get("range") != "span":
+                raise CompileError([f"vocabulary '{vocab}' does not support ranges; "
+                                    f"cannot compile '{code}'"])
+            lo = m.group(1) + m.group(2)
+            hi = (m.group(3) or m.group(1)) + m.group(4)
             if hi < lo:
                 raise CompileError([f"invalid range '{code}' (upper bound below lower)"])
-            atoms += [("prefix", f"{letter}{i:02d}") for i in range(lo, hi + 1)]
+            atoms.append(("span", lo, hi))
         elif "-" in code:
-            raise CompileError([f"unsupported range syntax '{code}' (only same-letter "
-                                "numeric ranges like F00-09 compile; cross-letter "
-                                "ranges must be split)"])
+            raise CompileError([f"unsupported range syntax '{code}'"])
         else:
             atoms.append((spec["match"], code))
     return atoms
 
 
+def _col_expr(column, vocab):
+    """Registry-normative normalization on the DATA side too: with strip_dots,
+    F02.3 and F023 in the column both match a contract code F02.3."""
+    if R.VOCABULARIES.get(vocab, {}).get("normalize") == "strip_dots":
+        return f"REPLACE({column}, '.', '')"
+    return column
+
+
 def code_clause(column, vocab, codes):
+    col = _col_expr(column, vocab)
     parts = []
-    for mode, value in match_atoms(vocab, codes):
-        if mode == "prefix":
-            parts.append(f"{column} LIKE {_q(value + '%')}")
-        elif mode == "exact_ci":
-            parts.append(f"LOWER({column}) = LOWER({_q(value)})")
+    for atom in match_atoms(vocab, codes):
+        if atom[0] == "prefix":
+            parts.append(f"{col} LIKE {_q(atom[1] + '%')}")
+        elif atom[0] == "exact_ci":
+            parts.append(f"LOWER({col}) = LOWER({_q(atom[1])})")
+        elif atom[0] == "span":
+            nxt = _after(atom[2])
+            parts.append(f"({col} >= {_q(atom[1])} AND {col} < {_q(nxt)})" if nxt
+                         else f"{col} >= {_q(atom[1])}")
         else:
-            raise CompileError([f"unknown match mode '{mode}'"])
+            raise CompileError([f"unknown match mode '{atom[0]}'"])
     return "(" + " OR ".join(parts) + ")"
 
 

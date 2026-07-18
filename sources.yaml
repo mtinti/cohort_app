@@ -13,29 +13,64 @@
 # ============================================================================
 registry_version: 1
 
+# Per-vocabulary NORMATIVE semantics:
+#   match: prefix | exact_ci — how a code selects rows
+#   range: span              — "F00-F09" / "C00-D48" select the whole block via
+#                              string comparison (>= lo, < after(hi)); needed
+#                              because ICD-10 chapters cross letters (C00-D48)
+#   normalize: strip_dots    — dots are presentational (F02.3 == F023); both
+#                              the contract code and the data column are
+#                              matched dot-free
+#   forms: allowed code shapes (regex, fullmatch) — the CONTROLLED part: no
+#          descriptions, but only structurally valid codes are accepted.
+#          Depth is capped (ICD-10/OPCS-4: one digit past the category).
 vocabularies:
   icd10:
     label: ICD-10
-    match: prefix           # a code selects itself and all descendants
-    range: numeric_suffix   # "F00-09" expands to prefixes F00..F09
+    match: prefix
+    range: span
+    normalize: strip_dots
+    hint: "chapter F · block F00-F09 or C00-D48 · category F02 · subcategory F02.3"
+    forms:
+      - "[A-Z]"                        # chapter letter (plain prefix)
+      - "[A-Z][0-9]{2}"                # category
+      - "[A-Z][0-9]{2}\\.?[0-9]"       # subcategory (max depth)
+      - "[A-Z][0-9]{2}-[A-Z]?[0-9]{2}" # block range, same- or cross-letter
+  opcs4:
+    label: OPCS-4
+    match: prefix
+    range: span
+    normalize: strip_dots
+    hint: "chapter L · block L20-L29 · category L29 · subcategory L29.4"
+    forms:
+      - "[A-HJ-X]"                          # OPCS-4 has no chapter I
+      - "[A-HJ-X][0-9]{2}"
+      - "[A-HJ-X][0-9]{2}\\.?[0-9]"
+      - "[A-HJ-X][0-9]{2}-[A-HJ-X]?[0-9]{2}"
   read:
     label: READ
     match: prefix
+    hint: "5-character READ v2 code, e.g. X1111 or G30.."
+    forms:
+      - "[A-Za-z0-9][A-Za-z0-9.]{4}"
   bnf:
     label: BNF
     match: prefix
+    hint: "numeric BNF code: chapter 06 · section 0601 · deeper 060101…"
+    forms:
+      - "[0-9]{2,9}"
   drug_name:
     label: Drug name
-    match: exact_ci         # case-insensitive exact match
+    match: exact_ci         # case-insensitive exact match; free text
 
 sources:
   demographics:
     description: One row per patient; age and sex.
     kinds: [demographic]
   hospital_admissions:
-    description: Coded hospital admission events.
+    description: Coded hospital admission events (diagnoses + procedures).
     kinds: [codes, anchor]
-    vocabularies: [icd10]
+    vocabularies: [icd10, opcs4]
   gp_events:
     description: Coded primary-care events.
     kinds: [codes, anchor]

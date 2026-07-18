@@ -11,13 +11,15 @@ its source? Level 1 (shape) is requirement_schema.check_contract; level 3
 (per-site feasibility) is compiler.feasibility.
 """
 import os
+import re
 
 import yaml
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # leaf field name in the YAML -> vocabulary id in the registry
-VOCAB_FIELDS = {"icd": "icd10", "read": "read", "bnf": "bnf", "drug_names": "drug_name"}
+VOCAB_FIELDS = {"icd": "icd10", "opcs": "opcs4", "read": "read", "bnf": "bnf",
+                "drug_names": "drug_name"}
 # sample_event event.type -> the logical source the event is read from
 EVENT_SOURCE = {"hospitalisation": "hospital_admissions", "medicine": "prescribing",
                 "gp_data": "gp_events", "lab_result": "lab_results"}
@@ -39,12 +41,55 @@ def sources_for(kind):
     return [name for name, s in SOURCES.items() if kind in s.get("kinds", [])]
 
 
+# --- controlled code FORMS (structure, not descriptions) ---------------------
+_FORMS = {v: [re.compile(p) for p in spec.get("forms", [])]
+          for v, spec in VOCABULARIES.items()}
+_RANGE = re.compile(r"^([A-Z])([0-9]{2})-([A-Z])?([0-9]{2})$", re.IGNORECASE)
+
+
+def normalize_code(vocab, code):
+    """Apply the vocabulary's normalization (e.g. F02.3 -> F023)."""
+    code = str(code).strip()
+    if VOCABULARIES.get(vocab, {}).get("normalize") == "strip_dots":
+        code = code.replace(".", "")
+    return code
+
+
+def invalid_code_forms(vocab, codes):
+    """Codes that match NO allowed form for the vocabulary (or a bad range)."""
+    forms = _FORMS.get(vocab, [])
+    if not forms:                      # e.g. drug_name: any non-empty text
+        return [c for c in codes if not str(c).strip()]
+    bad = []
+    for c in codes:
+        c = str(c).strip()
+        if not any(f.fullmatch(c) for f in forms):
+            bad.append(c)
+            continue
+        m = _RANGE.match(c)
+        if m:                          # range endpoints must be ordered
+            lo = m.group(1).upper() + m.group(2)
+            hi = (m.group(3) or m.group(1)).upper() + m.group(4)
+            if hi < lo:
+                bad.append(c)
+    return bad
+
+
 def vocabs_for(source):
     return SOURCES.get(source, {}).get("vocabularies", [])
 
 
 def measures_for(source):
     return SOURCES.get(source, {}).get("measures", [])
+
+
+def _check_forms(vocab, codes, where, errs):
+    bad = invalid_code_forms(vocab, codes or [])
+    if bad:
+        label = VOCABULARIES.get(vocab, {}).get("label", vocab)
+        hint = VOCABULARIES.get(vocab, {}).get("hint", "")
+        errs.append(f"{where}: invalid {label} code(s): {', '.join(map(str, bad))}"
+                    + (f" — allowed: {hint}" if hint else ""))
 
 
 def _check_anchor(a, where, errs):
@@ -57,6 +102,8 @@ def _check_anchor(a, where, errs):
     elif ev.get("vocab") not in vocabs_for(src):
         errs.append(f"{where}: vocabulary {ev.get('vocab')!r} is not legal for "
                     f"anchor source '{src}' (legal: {', '.join(vocabs_for(src)) or 'none'})")
+    else:
+        _check_forms(ev["vocab"], ev.get("codes"), where + " (anchor)", errs)
 
 
 def check_sources(contract):
@@ -81,9 +128,13 @@ def check_sources(contract):
                 return
         if k == "codes":
             for field, vocab in VOCAB_FIELDS.items():
-                if d.get(field) and vocab not in vocabs_for(src):
+                if not d.get(field):
+                    continue
+                if vocab not in vocabs_for(src):
                     errs.append(f"{where}: vocabulary '{vocab}' ({field}) is not legal "
                                 f"for source '{src}' (legal: {', '.join(vocabs_for(src))})")
+                else:
+                    _check_forms(vocab, d[field], where, errs)
         elif k == "measure":
             if d.get("measure") not in measures_for(src):
                 errs.append(f"{where}: measure {d.get('measure')!r} is not defined for "
@@ -95,6 +146,9 @@ def check_sources(contract):
                             "missing from the registry")
             if "biobank_samples" not in SOURCES:
                 errs.append(f"{where}: registry has no 'biobank_samples' source")
+            _EVT_VOCAB = {"hospitalisation": "icd10", "medicine": "bnf", "gp_data": "read"}
+            if ev.get("type") in _EVT_VOCAB:
+                _check_forms(_EVT_VOCAB[ev["type"]], ev.get("codes"), where, errs)
         if isinstance(d.get("when"), dict) and d["when"].get("anchor"):
             _check_anchor(d["when"]["anchor"], where, errs)
 

@@ -21,8 +21,12 @@ EX = os.path.join(ROOT, "examples")
 # patients: (id, age, sex)
 DEMOG = [(1, 30, "female"), (2, 40, "male"), (3, 70, "female"), (4, 10, "male"),
          (5, 50, "female"), (6, 60, "male"), (7, 45, "female"), (8, 85, "male")]
-HOSP = [(1, "A001", "2019-02-01"), (2, "B001", "2019-03-01"), (3, "A00", "2018-05-01"),
-        (5, "J45", "2020-01-01"), (8, "A00", "2019-01-01")]
+# (pid, icd diagnosis, opcs procedure, date) — site B stores procedures WITH
+# the dot (L29.4) while site A is dotless (L294): the registry's strip_dots
+# normalization must make both match a contract code either way
+HOSP = [(1, "A001", "L294", "2019-02-01"), (2, "B001", None, "2019-03-01"),
+        (3, "A00", "K634", "2018-05-01"), (5, "J45", None, "2020-01-01"),
+        (8, "A00", None, "2019-01-01")]
 GP = [(2, "X1111", "2019-01-01"), (6, "X1111", "2019-06-01"), (4, "X1111", "2019-04-01")]
 RX = [(1, "0101", "Metformin", "2019-02-10"), (5, "0202", "METFORMIN", "2019-07-01"),
       (7, "06011", "Aspirin", "2019-08-01"), (6, "0601", "Statin", "2019-03-01"),
@@ -48,8 +52,13 @@ def make_db(binding):
     create("demographics",
            [d["patient_id_column"], d["columns"]["age"], d["columns"]["sex"]], DEMOG)
     h = s["hospital_admissions"]
+    hosp = HOSP
+    if binding["site"] == "site-b":                  # dotted procedure codes
+        hosp = [(p, icd, (op[:3] + "." + op[3:] if op else op), d)
+                for p, icd, op, d in HOSP]
     create("hospital_admissions",
-           [h["patient_id_column"], h["code_columns"]["icd10"], h["date_column"]], HOSP)
+           [h["patient_id_column"], h["code_columns"]["icd10"],
+            h["code_columns"]["opcs4"], h["date_column"]], hosp)
     g = s["gp_events"]
     create("gp_events",
            [g["patient_id_column"], g["code_columns"]["read"], g["date_column"]], GP)
@@ -155,13 +164,52 @@ def test_uncompilable_fields_block(sites):
     assert any("[feasibility]" in p and "residence" in p for p in e.value.problems)
 
 
-def test_cross_letter_range_rejected(sites):
-    c = contract("case-control")
-    for m in c["cohorts"][0]["inclusion"]["members"][1]["members"]:
-        if m.get("icd"):
-            m["icd"] = ["C00-D48"]
-    with pytest.raises(CompileError):
-        compile_sql(c, sites[0][0])
+def codes_contract(**fields):
+    """Single group, single codes leaf on hospital_admissions."""
+    return {"project": "x", "project_type": "recruitment", "target_n": "",
+            "schema_version": S.SCHEMA_VERSION,
+            "cohorts": [{"id": "g1", "name": "G", "exclusions": [], "inclusion": {
+                "id": "c1", "op": "AND", "members": [
+                    {"id": "l1", "kind": "codes", "label": "c",
+                     "source": "hospital_admissions", **fields}]}}]}
+
+
+def test_chapter_letter_is_a_prefix(sites):
+    results = [cohorts(codes_contract(icd=["A"]), b, conn)["G"] for b, conn in sites]
+    assert results[0] == results[1] == {1, 3, 8}
+
+
+def test_cross_letter_block_range(sites):
+    # ICD-10 chapters cross letters (e.g. C00-D48); spans compare strings
+    results = [cohorts(codes_contract(icd=["A00-B01"]), b, conn)["G"]
+               for b, conn in sites]
+    assert results[0] == results[1] == {1, 2, 3, 8}
+
+
+def test_subcategory_dot_normalized(sites):
+    # contract says A00.1; the data stores A001 — strip_dots matches them
+    results = [cohorts(codes_contract(icd=["A00.1"]), b, conn)["G"]
+               for b, conn in sites]
+    assert results[0] == results[1] == {1}
+
+
+def test_opcs_category_matches_dotted_and_dotless_sites(sites):
+    # site A stores L294, site B stores L29.4 — same cohort either way
+    c = codes_contract(opcs=["L29"])
+    import registry as RG
+    assert S.check_contract(c) == [] and RG.check_sources(c) == []
+    results = [cohorts(c, b, conn)["G"] for b, conn in sites]
+    assert results[0] == results[1] == {1}
+
+
+def test_invalid_code_form_blocks_compilation(sites):
+    # F02.31 is deeper than the allowed subcategory depth -> registry level
+    with pytest.raises(CompileError) as e:
+        compile_sql(codes_contract(icd=["F02.31"]), sites[0][0])
+    assert any("[registry]" in p and "invalid ICD-10" in p for p in e.value.problems)
+    with pytest.raises(CompileError) as e:          # descending range
+        compile_sql(codes_contract(icd=["D48-C00"]), sites[0][0])
+    assert any("D48-C00" in p for p in e.value.problems)
 
 
 def test_icd_numeric_range_expands(sites):
@@ -202,7 +250,8 @@ def test_rdmp_script_structure(sites):
     assert "SetContainerOperation CohortAggregateContainer:$c1 EXCEPT" in cases
     assert 'Catalogue:"HospitalAdmissions"' in cases       # by NAME, from binding
     assert 'Catalogue:"Demography"' in cases
-    assert "icd_code LIKE 'A00%'" in cases                 # registry prefix semantics
+    # registry prefix semantics, dot-normalized on the data side
+    assert "REPLACE(icd_code, '.', '') LIKE 'A00%'" in cases
     hdr = (contract("case-control").get("contract") or {})
     assert "registry v1" in cases and "binding site-a" in cases   # provenance
     controls = next(r for r in out if r["name"] == "Controls")["script"]
@@ -212,7 +261,7 @@ def test_rdmp_script_structure(sites):
     cases_b = next(r for r in compile_rdmp(contract("case-control"), b2)
                    if r["name"] == "Cases")["script"]
     assert 'Catalogue:"SITEB_SMR01"' in cases_b
-    assert "main_condition LIKE 'A00%'" in cases_b
+    assert "REPLACE(main_condition, '.', '') LIKE 'A00%'" in cases_b
 
 
 def test_rdmp_no_exclusions_root_is_inclusion_op(sites):

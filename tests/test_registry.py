@@ -54,3 +54,39 @@ def test_bad_anchor_source_flagged():
         "anchor": {"event": {"source": "demographics", "vocab": "read", "codes": ["X"]},
                    "direction": "before"}}
     assert any("cannot be used as an anchor" in e for e in R.check_sources(c))
+
+
+# --- controlled code forms (structure without descriptions) -----------------
+def test_code_forms_icd10():
+    ok = ["F", "F02", "F02.3", "F023", "F00-F09", "C00-D48", "A00-01"]
+    assert R.invalid_code_forms("icd10", ok) == []
+    bad = ["F2", "F02.31", "D48-C00", "6.1", "f02"]
+    assert set(R.invalid_code_forms("icd10", bad)) == set(bad)
+
+
+def test_code_forms_opcs4():
+    assert R.invalid_code_forms("opcs4", ["L", "L29", "L29.4", "L20-L29"]) == []
+    assert R.invalid_code_forms("opcs4", ["I20"]) == ["I20"]   # OPCS has no chapter I
+
+
+def test_code_forms_read_and_bnf():
+    assert R.invalid_code_forms("read", ["X1111", "G30.."]) == []
+    assert R.invalid_code_forms("read", ["A1", "X11111"]) == ["A1", "X11111"]
+    assert R.invalid_code_forms("bnf", ["06", "0601", "060101"]) == []
+    assert R.invalid_code_forms("bnf", ["6.1-6.6", "6"]) == ["6.1-6.6", "6"]
+
+
+def test_check_sources_flags_bad_forms_everywhere():
+    c = S.to_contract(S.build_example())
+    hosp_leaf = c["cohorts"][0]["inclusion"]["members"][1]["members"][0]
+    hosp_leaf["icd"] = ["A00.11"]                       # too deep
+    hosp_leaf["when"] = {"anchor": {"event": {"source": "gp_events", "vocab": "read",
+                                              "codes": ["A1"]},   # not 5 chars
+                                    "direction": "before"}}
+    errs = R.check_sources(c)
+    assert any("invalid ICD-10" in e and "A00.11" in e for e in errs)
+    assert any("(anchor)" in e and "invalid READ" in e and "A1" in e for e in errs)
+
+
+def test_opcs_legal_on_hospital_admissions():
+    assert "opcs4" in R.vocabs_for("hospital_admissions")

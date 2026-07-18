@@ -772,3 +772,29 @@ def test_validation_message_and_ordinal_chips(page):
     assert page.get_by_text(re.compile(r"› exclusion 3: this UNION")).is_visible()
     assert page.locator(".ord", has_text=re.compile(r"^2\.1$")).count() == 1  # nested chip
     assert page.locator(".ord", has_text=re.compile(r"^3$")).count() >= 1    # the new exclusion
+
+
+def test_code_form_warning_in_dialog(page):
+    # hospital_admissions offers both ICD-10 and OPCS-4; entering a code
+    # deeper than the allowed depth warns immediately in the dialog
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_role("textbox", name="OPCS-4").count() == 1
+    dlg.get_by_role("textbox", name="ICD-10").fill("F02.31")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_text(re.compile("invalid ICD-10: F02.31")).is_visible()
+    dlg.get_by_role("textbox", name="ICD-10").fill("F02.3")
+    dlg.get_by_role("textbox", name="OPCS-4").fill("L29")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_text(re.compile("invalid ICD-10")).count() == 0
+    dlg.get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]
+    assert leaf["icd"] == ["F02.3"] and leaf["opcs"] == ["L29"]

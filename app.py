@@ -271,8 +271,8 @@ def body_html(n):
     lines = []
     if k == "codes":
         lines.append(f"source: <b>{_esc(n.get('source', '?'))}</b>")
-        for f, lab in (("icd", "ICD-10"), ("read", "READ"), ("bnf", "BNF"),
-                       ("drug_names", "Drug names")):
+        for f, lab in (("icd", "ICD-10"), ("opcs", "OPCS-4"), ("read", "READ"),
+                       ("bnf", "BNF"), ("drug_names", "Drug names")):
             if n.get(f):
                 lines.append(f"{lab}: {_esc(', '.join(n[f]))}")
         lines += _when_lines(n)
@@ -443,7 +443,8 @@ def leaf_dialog():
     elif k == "codes":
         _source_select(work, "codes")
         legal = R.vocabs_for(work["source"])
-        labels = {"icd": "ICD-10", "read": "READ", "bnf": "BNF", "drug_names": "Drug names"}
+        labels = {"icd": "ICD-10", "opcs": "OPCS-4", "read": "READ", "bnf": "BNF",
+                  "drug_names": "Drug names"}
         # only the vocabularies the registry allows for this source are editable
         shown = [f for f, v in R.VOCAB_FIELDS.items() if v in legal]
         cols = st.columns(2) if len(shown) > 1 else [st.container()]
@@ -451,7 +452,11 @@ def leaf_dialog():
             with cols[i % len(cols)]:
                 work[f] = _lines(karea(labels[f], _join(work.get(f)),
                                        key=f"dlg_codes_{f}", height=90))
-        st.caption("one code/range per line · e.g. E11, F00-09")
+                bad = R.invalid_code_forms(R.VOCAB_FIELDS[f], work[f])
+                if bad:
+                    st.warning(f"invalid {labels[f]}: {', '.join(bad)} — allowed: "
+                               + R.VOCABULARIES[R.VOCAB_FIELDS[f]].get("hint", ""))
+        st.caption("one code per line · ranges like F00-F09 or C00-D48 (ICD-10 / OPCS-4)")
         # codes left over from a previous source are NEVER dropped silently —
         # surface them with an explicit remove action
         for f, v in R.VOCAB_FIELDS.items():
