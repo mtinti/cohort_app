@@ -822,3 +822,19 @@ def test_anchor_code_form_warning(page):
     page.keyboard.press("Tab")
     settle(page)
     assert page.get_by_role("dialog").get_by_text(re.compile("invalid ICD-10")).count() == 0
+
+
+def test_gate_clean_load_adjustment_is_not_a_draft(page, tmp_path):
+    # a 3.0 version passes the gate (JSON number semantics); the load report
+    # must say so — canonicalization is an adjustment, not a gate failure
+    c = S.to_contract(S.build_example())
+    c["schema_version"] = 3.0
+    f = tmp_path / "float_version.requirement.yaml"
+    f.write_text(yaml.dump(c, sort_keys=False, allow_unicode=True))
+    page.get_by_text("Load a requirement.yaml").click()
+    settle(page)
+    page.locator("input[type='file']").set_input_files(str(f))
+    settle(page)
+    assert page.get_by_text("passes the strict contract gate").is_visible()
+    assert page.get_by_text("canonicalized to 3").is_visible()
+    assert page.get_by_text("does not pass the strict contract gate").count() == 0

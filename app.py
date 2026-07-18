@@ -702,9 +702,7 @@ def sidebar():
                     st.error(f"Could not load: {e}")
         rep = st.session_state.get("load_report")
         if rep:
-            if not rep["gate"] and not rep["draft"]:
-                st.success(f"✓ {rep['name']} passes the strict contract gate")
-            else:
+            if rep["gate"]:                    # gate failures -> a DRAFT
                 lines = [f"**{rep['name']} loaded as a DRAFT** — it does not pass "
                          "the strict contract gate:"]
                 lines += [f"- {e}" for e in rep["gate"]]
@@ -712,6 +710,12 @@ def sidebar():
                     lines.append("Coercions applied on load:")
                     lines += [f"- {w}" for w in rep["draft"]]
                 st.warning("\n".join(lines))
+            elif rep["draft"]:                 # gate-clean, but adjusted on load
+                st.info(f"✓ {rep['name']} passes the strict contract gate; "
+                        "adjustment(s) applied on load:\n\n"
+                        + "\n".join(f"- {w}" for w in rep["draft"]))
+            else:
+                st.success(f"✓ {rep['name']} passes the strict contract gate")
 
 
 # ----------------------------- main ----------------------------------------

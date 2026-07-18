@@ -571,3 +571,13 @@ def test_python_and_json_schema_agree_on_versions():
         except jsonschema.ValidationError:
             js = False
         assert py == js, (sv, py, js)
+
+
+def test_huge_integer_versions_do_not_crash():
+    c = _minimal_contract()
+    c["schema_version"] = 10 ** 1000
+    assert any("schema_version" in e for e in S.check_contract(c))  # not OverflowError
+    issues = []
+    req = S.from_contract(c, issues)
+    assert any("kept as-is" in w for w in issues)
+    assert S.to_contract(req)["schema_version"] == 10 ** 1000

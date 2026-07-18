@@ -85,7 +85,9 @@ def _int_version(sv):
     """
     if isinstance(sv, bool) or not isinstance(sv, (int, float)):
         return None
-    return int(sv) if float(sv).is_integer() else None
+    if isinstance(sv, int):        # directly — float(10**1000) would overflow
+        return sv
+    return int(sv) if sv.is_integer() else None
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEMOG_SRC = "demographics"
 
