@@ -10,13 +10,13 @@ project_type: registry
 target_n: all eligible
 schema_version: 3
 cohorts:
-- id: 8c1e207d
+- id: bb32f212
   name: Anchored threshold cohort
   inclusion:
-    id: 22dad91b
+    id: 1e5a16be
     op: AND
     members:
-    - id: 14ef5a0e
+    - id: 6796aad5
       kind: measure
       label: Raised HbA1c in 2019
       source: lab_results
@@ -28,7 +28,7 @@ cohorts:
         window:
           from: '2019-01-01'
           to: '2019-12-31'
-    - id: b28b81fb
+    - id: a8aaea06
       kind: codes
       label: BNF ch.6 medicine before first diagnosis
       source: prescribing

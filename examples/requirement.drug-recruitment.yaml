@@ -10,36 +10,36 @@ project_type: recruitment
 target_n: ~20
 schema_version: 3
 cohorts:
-- id: f4038ab4
+- id: 6a8c80f5
   name: Exposed adults
   inclusion:
-    id: 39a52600
+    id: b15a3ebe
     op: AND
     members:
-    - id: 4fe755d6
+    - id: f1f8870b
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: b18b4e55
+    - id: 964de18f
       op: OR
       label: Drug exposure (name or BNF)
       members:
-      - id: f3314e36
+      - id: da41014c
         kind: codes
         label: By drug name
         source: prescribing
         drug_names:
         - metformin
-      - id: 9897e28b
+      - id: dbc4c655
         kind: codes
         label: By BNF code
         source: prescribing
         bnf:
         - '06011'
   exclusions:
-  - id: 9ddffb12
+  - id: f92c1f9d
     kind: codes
     label: Prior condition
     source: hospital_admissions

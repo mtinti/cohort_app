@@ -11,7 +11,10 @@
 > (demographic / codes / note). Everything else (groups, INTERSECT/UNION
 > containers, ordered exclusions, load / clone / preview) is shared by both.
 
-**Status:** draft v2.2 (2026-07-15) — schema v2: adds persistent `id`s,
+**Status:** draft v2.3 (2026-07-18) — **schema v3**: v2 plus the `opcs[]`
+(OPCS-4) code field and controlled code forms (see §5.4; registry v2 defines
+span ranges, dot normalization and per-vocabulary allowed forms). Schema v2
+(2026-07-15) added persistent `id`s,
 one-schema-for-all-environments, draft-vs-strict loading, the **logical source
 registry** (`sources.yaml` — `source` values are registry names, matching
 semantics are registry-normative), the **`measure` kind** (value thresholds),
@@ -114,7 +117,7 @@ emitted **verbatim** (expansion happens downstream). Canonical worked file:
 | `project_type` | enum `recruitment` \| `registry` \| `biobank` \| `other` | hints the builder's template family; the schema accepts all four everywhere (the UI flag only gates what the form offers) |
 | `target_n` | string | free text, e.g. "15 per group (90 total)" |
 | `ticket` | string (optional) | Jira key; names files / tags YAML only — **no Jira calls** |
-| `schema_version` | int | currently `1` |
+| `schema_version` | int | currently `3` (v1/v2 files draft-load and upgrade; unknown versions are rejected by the gate) |
 | `cohorts` | list of **Group** | one self-contained group per CIC build |
 
 ### 5.2 Group (self-contained = one full RDMP build)

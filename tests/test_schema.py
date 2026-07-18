@@ -410,3 +410,66 @@ def test_new_codes_vocab_args_are_keyword_only():
     import pytest
     with pytest.raises(TypeError):
         S.new_codes("label", "hospital_admissions", ["A00"])
+
+
+# ---------------------------------------------------------------------------
+# Review round 2 on the controlled-forms fixes (fb5a4a9)
+# ---------------------------------------------------------------------------
+def test_gate_requires_at_least_one_code_field():
+    c = _minimal_contract()
+    leaf = c["cohorts"][0]["inclusion"]["members"][0]
+    del leaf["icd"]                                     # no code fields at all
+    assert any("needs at least one of" in e for e in S.check_contract(c))
+    leaf["icd"] = None                                  # explicit null
+    assert any("needs at least one of" in e for e in S.check_contract(c))
+
+
+def test_gate_requires_codes_for_coded_sample_events():
+    def sample(codes_value, etype="gp_data"):
+        se = {"event": {"type": etype, "occurrence": "first"},
+              "direction": "before"}
+        if codes_value != "ABSENT":
+            se["event"]["codes"] = codes_value
+        return {"project": "x", "project_type": "recruitment",
+                "schema_version": S.SCHEMA_VERSION,
+                "cohorts": [{"id": "g", "name": "G", "exclusions": [], "inclusion": {
+                    "id": "c", "op": "AND", "members": [
+                        {"id": "s", "kind": "sample", "sample_event": se}]}}]}
+    assert any("non-empty list" in e for e in S.check_contract(sample("ABSENT")))
+    assert any("non-empty list" in e for e in S.check_contract(sample([])))
+    assert S.check_contract(sample(["X1111"])) == []
+    # lab_result is free text: absent/empty codes are fine
+    assert S.check_contract(sample("ABSENT", etype="lab_result")) == []
+    assert S.check_contract(sample([], etype="lab_result")) == []
+
+
+def test_unknown_future_versions_are_not_relabelled():
+    c = _minimal_contract()
+    c["schema_version"] = 99
+    issues = []
+    req = S.from_contract(c, issues)
+    assert any("kept as-is" in w for w in issues)
+    exported = S.to_contract(req)
+    assert exported["schema_version"] == 99             # NOT silently upgraded
+    assert any("schema_version" in e for e in S.check_contract(exported))
+
+
+def test_json_schema_rejects_blank_code_strings():
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    c = S.to_contract(S.build_example())
+    jsonschema.validate(c, S.json_schema())
+    c["cohorts"][0]["inclusion"]["members"][1]["members"][0]["icd"] = ["   "]
+    with __import__("pytest").raises(jsonschema.ValidationError):
+        jsonschema.validate(c, S.json_schema())
+    assert S.check_contract(c) != []                    # python agrees
+
+
+def test_fixture_ids_are_stable():
+    # persistent ids must survive schema-version bumps (they address criteria
+    # in reviews/diffs); pin a few from the committed fixtures
+    import os
+    import yaml as _y
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cc = _y.safe_load(open(os.path.join(root, "examples/requirement.case-control.yaml")))
+    assert cc["cohorts"][0]["id"] == "65080a14"
+    assert cc["cohorts"][0]["inclusion"]["members"][0]["id"] == "d6e1b524"

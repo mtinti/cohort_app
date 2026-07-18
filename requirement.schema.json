@@ -200,35 +200,40 @@
             "icd": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "\\S"
               },
               "minItems": 1
             },
             "opcs": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "\\S"
               },
               "minItems": 1
             },
             "read": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "\\S"
               },
               "minItems": 1
             },
             "bnf": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "\\S"
               },
               "minItems": 1
             },
             "drug_names": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "\\S"
               },
               "minItems": 1
             },
@@ -277,7 +282,8 @@
                         "codes": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "pattern": "\\S"
                           },
                           "minItems": 1
                         },
@@ -410,7 +416,8 @@
                         "codes": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "pattern": "\\S"
                           },
                           "minItems": 1
                         },
@@ -508,7 +515,8 @@
                     "codes": {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "\\S"
                       }
                     }
                   }

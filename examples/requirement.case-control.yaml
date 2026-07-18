@@ -10,65 +10,65 @@ project_type: registry
 target_n: all eligible
 schema_version: 3
 cohorts:
-- id: 683b7b2d
+- id: 65080a14
   name: Cases
   inclusion:
-    id: eda89500
+    id: 9a957e42
     op: AND
     members:
-    - id: 162e1289
+    - id: d6e1b524
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: 1bfc4e49
+    - id: 77f67461
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: 165032e0
+      - id: eea94872
         kind: codes
         label: Condition in hospital data
         source: hospital_admissions
         icd:
         - A00
-      - id: '50574915'
+      - id: 8f313f0b
         kind: codes
         label: Condition in primary care
         source: gp_events
         read:
         - X1111
   exclusions:
-  - id: 5cb36635
+  - id: 07eac5fb
     kind: codes
     label: Comorbidity to exclude
     source: hospital_admissions
     icd:
     - B00
-- id: 1a7f4f38
+- id: 9257bf13
   name: Controls
   inclusion:
-    id: fa9f79f0
+    id: 1a1415e6
     op: AND
     members:
-    - id: 72d74f2a
+    - id: 0f2e00f7
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
   exclusions:
-  - id: 4e253354
+  - id: 1bd78eb8
     op: OR
     label: Condition of interest (any source)
     members:
-    - id: ce627ea8
+    - id: f2b6de8a
       kind: codes
       label: Condition in hospital data
       source: hospital_admissions
       icd:
       - A00
-    - id: ec593b62
+    - id: cd439a1e
       kind: codes
       label: Condition in primary care
       source: gp_events

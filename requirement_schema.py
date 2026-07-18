@@ -67,9 +67,11 @@ CONTRACT_STATUSES = ["draft", "agreed"]
 # v3 (2026-07-18): adds the `opcs` code field (OPCS-4). A v2 consumer would
 # reject `opcs` as an unknown field, so accepting it under the same version
 # id would make "valid v2" deployment-dependent — hence the bump. Migration:
-# v1/v2 files draft-load (every coercion reported) and are UPGRADED to the
-# current version on load; re-seal after review.
+# ONLY the versions below draft-load with an upgrade to the current version
+# (every coercion reported; re-seal after review). Unknown/future versions
+# load as drafts but KEEP their version, so the gate keeps rejecting them.
 SCHEMA_VERSION = 3
+MIGRATABLE_VERSIONS = {1, 2}
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEMOG_SRC = "demographics"
 
@@ -411,10 +413,17 @@ def from_contract(data, issues=None):
     rec = issues.append if issues is not None else (lambda m: None)
     data = data or {}
     sv = data.get("schema_version")
+    sv_out = SCHEMA_VERSION
     if sv != SCHEMA_VERSION:
-        rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
-            f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
-            "(and re-seal, if it was sealed) before use")
+        if sv in MIGRATABLE_VERSIONS:
+            rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
+                f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
+                "(and re-seal, if it was sealed) before use")
+        else:                   # unknown/future versions must NOT be relabelled
+            sv_out = sv
+            rec(f"schema_version {sv!r} is not supported (this tool is v"
+                f"{SCHEMA_VERSION}; it migrates {sorted(MIGRATABLE_VERSIONS)}); "
+                "kept as-is — the strict gate will reject it")
     pt = data.get("project_type", "recruitment")
     if pt not in PROJECT_TYPES:               # keep verbatim — validate() will flag it
         rec(f"unknown project_type {pt!r} (kept as authored)")
@@ -423,7 +432,7 @@ def from_contract(data, issues=None):
            "target_n": data.get("target_n", ""),
            "ticket": data.get("ticket", ""),
            "contract": dict(data["contract"]) if isinstance(data.get("contract"), dict) else None,
-           "schema_version": SCHEMA_VERSION,      # migration: always upgrade on load
+           "schema_version": sv_out,
            "cohorts": []}
     for gd in data.get("cohorts", []) or []:
         inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []}, rec)
@@ -625,10 +634,14 @@ def check_contract(data):
         check_id(d, where)
         unknown(d, _LEAF_KEYS[k], where)
         if k == "codes":
-            for f in _CODE_FIELDS:
-                if d.get(f) is not None and not _is_code_list(d[f]):
+            present = [f for f in _CODE_FIELDS if d.get(f) is not None]
+            for f in present:
+                if not _is_code_list(d[f]):
                     errs.append(f"{where}: {f} must be a non-empty list of "
                                 "code strings")
+            if not present:      # would compile to an empty WHERE ()
+                errs.append(f"{where}: a codes criterion needs at least one of: "
+                            + ", ".join(_CODE_FIELDS))
         if k == "demographic":
             if d.get("sex") is not None and d["sex"] not in SEXES:
                 errs.append(f"{where}: sex {d['sex']!r} must be one of: " + ", ".join(SEXES))
@@ -652,10 +665,15 @@ def check_contract(data):
                 if ev.get("type") not in EVENT_TYPES:
                     errs.append(f"{where}: event type {ev.get('type')!r} must be one of: "
                                 + ", ".join(EVENT_TYPES))
-                codes = ev.get("codes")     # may be [] (lab_result is free text)
-                if codes is not None and (not isinstance(codes, list) or not all(
-                        isinstance(x, str) and x.strip() for x in codes)):
-                    errs.append(f"{where}: event codes must be a list of code strings")
+                codes = ev.get("codes")
+                if ev.get("type") == "lab_result":   # free text: may be []/absent
+                    if codes is not None and (not isinstance(codes, list) or not all(
+                            isinstance(x, str) and x.strip() for x in codes)):
+                        errs.append(f"{where}: event codes must be a list of "
+                                    "code strings")
+                elif not _is_code_list(codes):       # coded events NEED codes
+                    errs.append(f"{where}: event codes must be a non-empty list "
+                                "of code strings")
                 if ev.get("occurrence", "first") not in OCCURRENCE:
                     errs.append(f"{where}: occurrence must be first or last")
                 if se.get("direction") not in DIRECTION:
@@ -811,7 +829,9 @@ def notes_in(contract_dict):
 # kept in sync by a test.
 # ---------------------------------------------------------------------------
 def json_schema():
-    codes_list = {"type": "array", "items": {"type": "string"}, "minItems": 1}
+    # items must contain a non-whitespace character (mirrors _is_code_list)
+    code_str = {"type": "string", "pattern": "\\S"}
+    codes_list = {"type": "array", "items": code_str, "minItems": 1}
     within = {"type": "object", "additionalProperties": False, "required": ["n", "unit"],
               "properties": {"n": {"type": "integer", "minimum": 1},
                              "unit": {"enum": WITHIN_UNITS}}}
@@ -852,7 +872,7 @@ def json_schema():
                                                     "occurrence": {"enum": OCCURRENCE},
                                                     "label": {"type": "string"},
                                                     "codes": {"type": "array",
-                                                              "items": {"type": "string"}}}},
+                                                              "items": code_str}}},
                            "direction": {"enum": DIRECTION},
                            "within": within}}},
         "note": {"text": {"type": "string"}},
