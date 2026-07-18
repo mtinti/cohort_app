@@ -64,7 +64,12 @@ OCCURRENCE = ["first", "last"]
 DIRECTION = ["before", "after"]
 WITHIN_UNITS = ["days", "weeks", "months", "years"]
 CONTRACT_STATUSES = ["draft", "agreed"]
-SCHEMA_VERSION = 2
+# v3 (2026-07-18): adds the `opcs` code field (OPCS-4). A v2 consumer would
+# reject `opcs` as an unknown field, so accepting it under the same version
+# id would make "valid v2" deployment-dependent — hence the bump. Migration:
+# v1/v2 files draft-load (every coercion reported) and are UPGRADED to the
+# current version on load; re-seal after review.
+SCHEMA_VERSION = 3
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEMOG_SRC = "demographics"
 
@@ -88,8 +93,10 @@ def new_demographic(label="", source=_DEMOG_SRC, age_min=None, age_max=None,
             "sex": sex, "residence": residence, "simd": simd}
 
 
-def new_codes(label="", source=None, icd=None, opcs=None, read=None, bnf=None,
+def new_codes(label="", source=None, *, icd=None, opcs=None, read=None, bnf=None,
               drug_names=None, when=None):
+    # vocabulary args are KEYWORD-ONLY: inserting a new vocabulary must never
+    # silently shift an existing positional caller's codes into another field
     if source is None:
         source = R.sources_for("codes")[0]
     return {"_id": _id(), "node": "leaf", "kind": "codes", "label": label, "source": source,
@@ -370,9 +377,10 @@ def _build_member(d, rec):
                                         d.get("age_min"), d.get("age_max"), sex,
                                         d.get("residence", ""), d.get("simd", "")), d)
     if k == "codes":
-        return _keep_id(new_codes(lbl, d.get("source", ""), d.get("icd"), d.get("opcs"),
-                                  d.get("read"), d.get("bnf"), d.get("drug_names"),
-                                  _load_when(d, rec, where)), d)
+        return _keep_id(new_codes(lbl, d.get("source", ""), icd=d.get("icd"),
+                                  opcs=d.get("opcs"), read=d.get("read"),
+                                  bnf=d.get("bnf"), drug_names=d.get("drug_names"),
+                                  when=_load_when(d, rec, where)), d)
     if k == "measure":
         return _keep_id(new_measure(lbl, d.get("source", ""), d.get("measure", ""),
                                     d.get("op", ">="), d.get("value"), d.get("unit", ""),
@@ -404,8 +412,9 @@ def from_contract(data, issues=None):
     data = data or {}
     sv = data.get("schema_version")
     if sv != SCHEMA_VERSION:
-        rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION} "
-            "(loaded as a draft; the strict gate will reject it)")
+        rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
+            f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
+            "(and re-seal, if it was sealed) before use")
     pt = data.get("project_type", "recruitment")
     if pt not in PROJECT_TYPES:               # keep verbatim — validate() will flag it
         rec(f"unknown project_type {pt!r} (kept as authored)")
@@ -414,7 +423,7 @@ def from_contract(data, issues=None):
            "target_n": data.get("target_n", ""),
            "ticket": data.get("ticket", ""),
            "contract": dict(data["contract"]) if isinstance(data.get("contract"), dict) else None,
-           "schema_version": data.get("schema_version", SCHEMA_VERSION),
+           "schema_version": SCHEMA_VERSION,      # migration: always upgrade on load
            "cohorts": []}
     for gd in data.get("cohorts", []) or []:
         inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []}, rec)
@@ -454,6 +463,14 @@ _LEAF_KEYS = {
     "sample": {"id", "kind", "label", "sample_event"},
     "note": {"id", "kind", "label", "text"},
 }
+_CODE_FIELDS = ("icd", "opcs", "read", "bnf", "drug_names")
+
+
+def _is_code_list(v):
+    return (isinstance(v, list) and v
+            and all(isinstance(x, str) and x.strip() for x in v))
+
+
 _WHEN_KEYS = {"window", "anchor"}
 _WINDOW_KEYS = {"from", "to"}
 _ANCHOR_KEYS = {"event", "direction", "within"}
@@ -509,8 +526,9 @@ def _check_when(w, where, errs):
                 errs.append(f"{where}: anchor.event.source is required")
             if not ev.get("vocab"):
                 errs.append(f"{where}: anchor.event.vocab is required")
-            if not ev.get("codes"):
-                errs.append(f"{where}: anchor.event.codes must be a non-empty list")
+            if not _is_code_list(ev.get("codes")):
+                errs.append(f"{where}: anchor.event.codes must be a non-empty "
+                            "list of code strings")
             if ev.get("occurrence", "first") not in OCCURRENCE:
                 errs.append(f"{where}: anchor.event.occurrence must be first or last")
         if a.get("direction") not in DIRECTION:
@@ -606,6 +624,11 @@ def check_contract(data):
             return
         check_id(d, where)
         unknown(d, _LEAF_KEYS[k], where)
+        if k == "codes":
+            for f in _CODE_FIELDS:
+                if d.get(f) is not None and not _is_code_list(d[f]):
+                    errs.append(f"{where}: {f} must be a non-empty list of "
+                                "code strings")
         if k == "demographic":
             if d.get("sex") is not None and d["sex"] not in SEXES:
                 errs.append(f"{where}: sex {d['sex']!r} must be one of: " + ", ".join(SEXES))
@@ -629,6 +652,10 @@ def check_contract(data):
                 if ev.get("type") not in EVENT_TYPES:
                     errs.append(f"{where}: event type {ev.get('type')!r} must be one of: "
                                 + ", ".join(EVENT_TYPES))
+                codes = ev.get("codes")     # may be [] (lab_result is free text)
+                if codes is not None and (not isinstance(codes, list) or not all(
+                        isinstance(x, str) and x.strip() for x in codes)):
+                    errs.append(f"{where}: event codes must be a list of code strings")
                 if ev.get("occurrence", "first") not in OCCURRENCE:
                     errs.append(f"{where}: occurrence must be first or last")
                 if se.get("direction") not in DIRECTION:

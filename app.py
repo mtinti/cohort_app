@@ -395,6 +395,11 @@ def _timing_editor(work):
                          format_func=lambda o: f"{o} occurrence")
             codes = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
                                  key="dlg_a_codes", height=70))
+            bad = R.invalid_code_forms(vocab, codes)
+            if bad:
+                st.warning(f"invalid {R.VOCABULARIES.get(vocab, {}).get('label', vocab)}: "
+                           f"{', '.join(bad)} — allowed: "
+                           + R.VOCABULARIES.get(vocab, {}).get("hint", ""))
             direction = kradio("This condition happens", S.DIRECTION,
                                a.get("direction", "before"), key="dlg_a_dir",
                                horizontal=True, format_func=lambda d: f"{d} the index date")
@@ -501,6 +506,13 @@ def leaf_dialog():
         ev["label"] = ktext("Event label", ev.get("label", ""), key="dlg_ev_label")
         ev["codes"] = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
                                    key="dlg_ev_codes", height=80))
+        ev_vocab = R.EVENT_TYPE_VOCAB.get(ev["type"])
+        if ev_vocab:                      # lab_result is free text: no form check
+            bad = R.invalid_code_forms(ev_vocab, ev["codes"])
+            if bad:
+                st.warning(f"invalid {R.VOCABULARIES[ev_vocab]['label']}: "
+                           f"{', '.join(bad)} — allowed: "
+                           + R.VOCABULARIES[ev_vocab].get("hint", ""))
         se["direction"] = kradio("Sample is", S.DIRECTION, se["direction"],
                                  key="dlg_s_dir", horizontal=True)
         wi = se.get("within") or {}

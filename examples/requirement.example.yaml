@@ -20,99 +20,99 @@
 project: Example cohort request (edit me)
 project_type: recruitment
 target_n: approx. N per group
-schema_version: 2
+schema_version: 3
 cohorts:
-- id: cd2d21d9
+- id: a387d673
   name: Group A — cases
   inclusion:
-    id: 87e45a57
+    id: a97d9e10
     op: AND
     members:
-    - id: 928daa71
+    - id: c4e9191c
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: f57f0f18
+    - id: f23b40f5
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: f0550bc7
+      - id: 0f6955bf
         kind: codes
         label: Condition in hospital data
         source: hospital_admissions
         icd:
         - A00
-      - id: 0b81993c
+      - id: c0c2228f
         kind: codes
         label: Condition in primary care
         source: gp_events
         read:
         - X1111
-    - id: 2510ba25
+    - id: 0360cbd9
       op: OR
       label: A second condition (placeholder)
       members:
-      - id: aa61be82
+      - id: 7547cd82
         kind: codes
         label: Second condition (primary care)
         source: gp_events
         read:
         - X2222
-      - id: 4ad90d2f
+      - id: 99ecc46a
         kind: codes
         label: Second condition (hospital)
         source: hospital_admissions
         icd:
         - A01
   exclusions:
-  - id: 58f16a58
+  - id: ad4af38a
     kind: codes
     label: Comorbidity to exclude
     source: hospital_admissions
     icd:
     - B00
-  - id: f83a98f0
+  - id: 89e12790
     kind: note
     label: Other criterion (no code yet)
     text: Describe any criterion that has no agreed code.
-- id: ab295a31
+- id: 11328aca
   name: Group B — controls
   inclusion:
-    id: a4a58a20
+    id: 3a804eff
     op: AND
     members:
-    - id: 67096de2
+    - id: c04613e2
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: 8f2b2946
+    - id: a1ab2efb
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: c1c7ee58
+      - id: 214c1b1e
         kind: codes
         label: Condition in hospital data
         source: hospital_admissions
         icd:
         - A00
-      - id: 6588637a
+      - id: eb254b03
         kind: codes
         label: Condition in primary care
         source: gp_events
         read:
         - X1111
   exclusions:
-  - id: d6d8b873
+  - id: 81c9e789
     kind: codes
     label: Exclude a condition variant
     source: gp_events
     read:
     - X3333
-  - id: 29dc55a6
+  - id: 8e9b3018
     kind: codes
     label: Comorbidity to exclude
     source: hospital_admissions

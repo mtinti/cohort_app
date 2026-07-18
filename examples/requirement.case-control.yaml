@@ -8,67 +8,67 @@
 project: 'Fixture: case-control study'
 project_type: registry
 target_n: all eligible
-schema_version: 2
+schema_version: 3
 cohorts:
-- id: 65080a14
+- id: 683b7b2d
   name: Cases
   inclusion:
-    id: 9a957e42
+    id: eda89500
     op: AND
     members:
-    - id: d6e1b524
+    - id: 162e1289
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: 77f67461
+    - id: 1bfc4e49
       op: OR
       label: Condition of interest (any source)
       members:
-      - id: eea94872
+      - id: 165032e0
         kind: codes
         label: Condition in hospital data
         source: hospital_admissions
         icd:
         - A00
-      - id: 8f313f0b
+      - id: '50574915'
         kind: codes
         label: Condition in primary care
         source: gp_events
         read:
         - X1111
   exclusions:
-  - id: 07eac5fb
+  - id: 5cb36635
     kind: codes
     label: Comorbidity to exclude
     source: hospital_admissions
     icd:
     - B00
-- id: 9257bf13
+- id: 1a7f4f38
   name: Controls
   inclusion:
-    id: 1a1415e6
+    id: fa9f79f0
     op: AND
     members:
-    - id: 0f2e00f7
+    - id: 72d74f2a
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
   exclusions:
-  - id: 1bd78eb8
+  - id: 4e253354
     op: OR
     label: Condition of interest (any source)
     members:
-    - id: f2b6de8a
+    - id: ce627ea8
       kind: codes
       label: Condition in hospital data
       source: hospital_admissions
       icd:
       - A00
-    - id: cd439a1e
+    - id: ec593b62
       kind: codes
       label: Condition in primary care
       source: gp_events

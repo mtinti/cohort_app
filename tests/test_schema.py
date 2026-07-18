@@ -363,3 +363,50 @@ def test_notes_in_reports_positions():
     nid, lbl, where = notes[0]
     assert where == "Group A — cases › exclusion 2"
     assert lbl == "Other criterion (no code yet)"
+
+
+# ---------------------------------------------------------------------------
+# Review findings on the controlled-forms change (db54909)
+# ---------------------------------------------------------------------------
+def test_schema_v3_and_v2_files_draft_upgrade():
+    assert S.SCHEMA_VERSION == 3            # opcs made v2 ambiguous -> bumped
+    c = _minimal_contract()
+    c["schema_version"] = 2
+    assert any("schema_version" in e for e in S.check_contract(c))
+    issues = []
+    req = S.from_contract(c, issues)        # migration: draft-load upgrades
+    assert any("UPGRADED to v3" in w for w in issues)
+    upgraded = S.to_contract(req)
+    assert upgraded["schema_version"] == 3
+    assert S.check_contract(upgraded) == []
+
+
+def test_gate_rejects_non_list_code_fields():
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"][0]["icd"] = 123
+    assert any("icd must be a non-empty list of code strings" in e
+               for e in S.check_contract(c))
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"][0]["icd"] = ["A00", 5]
+    assert any("list of code strings" in e for e in S.check_contract(c))
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"][0]["when"] = {
+        "anchor": {"event": {"source": "gp_events", "vocab": "read",
+                             "codes": "X1111"},          # string, not list
+                   "direction": "before"}}
+    assert any("anchor.event.codes" in e for e in S.check_contract(c))
+
+
+def test_registry_tolerates_shape_errors():
+    import registry as RG
+    c = _minimal_contract()
+    c["cohorts"][0]["inclusion"]["members"][0]["icd"] = 123
+    RG.check_sources(c)                     # must not raise (gate reports shape)
+    c["cohorts"][0]["inclusion"]["members"][0]["icd"] = ["A00", None]
+    RG.check_sources(c)
+
+
+def test_new_codes_vocab_args_are_keyword_only():
+    import pytest
+    with pytest.raises(TypeError):
+        S.new_codes("label", "hospital_admissions", ["A00"])

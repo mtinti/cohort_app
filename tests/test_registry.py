@@ -4,7 +4,7 @@ import requirement_schema as S
 
 
 def test_registry_loads():
-    assert R.REGISTRY_VERSION == 1
+    assert R.REGISTRY_VERSION == 2
     assert "codes" in R.SOURCES["hospital_admissions"]["kinds"]
     assert R.sources_for("demographic") == ["demographics"]
     assert "icd10" in R.vocabs_for("hospital_admissions")

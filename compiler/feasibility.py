@@ -8,8 +8,8 @@ import registry as R
 
 from .binding import src
 
-# sample_event event.type -> the vocabulary its codes are in
-EVENT_TYPE_VOCAB = {"hospitalisation": "icd10", "medicine": "bnf", "gp_data": "read"}
+# single definition lives in the registry (also used by check_sources + the UI)
+EVENT_TYPE_VOCAB = R.EVENT_TYPE_VOCAB
 
 
 def _need(sb, source, field, where, errs, sub=None):

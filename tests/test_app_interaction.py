@@ -798,3 +798,27 @@ def test_code_form_warning_in_dialog(page):
     settle(page)
     leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]
     assert leaf["icd"] == ["F02.3"] and leaf["opcs"] == ["L29"]
+
+
+def test_anchor_code_form_warning(page):
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="ICD-10").fill("E11")
+    dlg.get_by_text("⏱ Timing (optional)").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("Anchor to a per-patient index event").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill("X1")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_text(re.compile("invalid ICD-10: X1")).is_visible()
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill("E10")
+    page.keyboard.press("Tab")
+    settle(page)
+    assert page.get_by_role("dialog").get_by_text(re.compile("invalid ICD-10")).count() == 0

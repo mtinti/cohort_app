@@ -8,38 +8,38 @@
 project: 'Fixture: drug-exposure recruitment'
 project_type: recruitment
 target_n: ~20
-schema_version: 2
+schema_version: 3
 cohorts:
-- id: 6a8c80f5
+- id: f4038ab4
   name: Exposed adults
   inclusion:
-    id: b15a3ebe
+    id: 39a52600
     op: AND
     members:
-    - id: f1f8870b
+    - id: 4fe755d6
       kind: demographic
       label: Adults
       source: demographics
       age_min: 18
       age_max: 80
-    - id: 964de18f
+    - id: b18b4e55
       op: OR
       label: Drug exposure (name or BNF)
       members:
-      - id: da41014c
+      - id: f3314e36
         kind: codes
         label: By drug name
         source: prescribing
         drug_names:
         - metformin
-      - id: dbc4c655
+      - id: 9897e28b
         kind: codes
         label: By BNF code
         source: prescribing
         bnf:
         - '06011'
   exclusions:
-  - id: f92c1f9d
+  - id: 9ddffb12
     kind: codes
     label: Prior condition
     source: hospital_admissions

@@ -253,7 +253,7 @@ def test_rdmp_script_structure(sites):
     # registry prefix semantics, dot-normalized on the data side
     assert "REPLACE(icd_code, '.', '') LIKE 'A00%'" in cases
     hdr = (contract("case-control").get("contract") or {})
-    assert "registry v1" in cases and "binding site-a" in cases   # provenance
+    assert "registry v2" in cases and "binding site-a" in cases   # provenance
     controls = next(r for r in out if r["name"] == "Controls")["script"]
     assert "EXCEPT" in controls                            # exclusions -> root EXCEPT
     # site-b emits the same structure with ITS catalogue names

@@ -51,3 +51,22 @@ def test_add_sample_condition_and_export(page_flag):
     assert leaf["sample_event"]["event"]["codes"] == ["X9999"]
     assert leaf["sample_event"]["within"] == {"n": 3, "unit": "months"}
     assert S.check_contract(got) == []
+
+
+def test_sample_event_code_warning(page_flag):
+    page = page_flag
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.locator("[data-baseweb='select']").nth(0).click()
+    settle(page, 400)
+    page.get_by_role("option", name="sample", exact=True).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill("A1")  # not 5 chars
+    page.keyboard.press("Tab")
+    settle(page)
+    assert page.get_by_role("dialog").get_by_text(
+        re.compile("invalid READ: A1")).is_visible()

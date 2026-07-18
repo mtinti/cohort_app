@@ -11,7 +11,9 @@
 #   anchor        — usable as the index event of a timing anchor
 #   sample_target — the sample-event table used by kind: sample
 # ============================================================================
-registry_version: 1
+# v2 (2026-07-18): forms/span-ranges/strip_dots semantics + opcs4 vocabulary;
+# a v1 consumer would interpret ranges and code validity differently.
+registry_version: 2
 
 # Per-vocabulary NORMATIVE semantics:
 #   match: prefix | exact_ci — how a code selects rows

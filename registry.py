@@ -23,6 +23,8 @@ VOCAB_FIELDS = {"icd": "icd10", "opcs": "opcs4", "read": "read", "bnf": "bnf",
 # sample_event event.type -> the logical source the event is read from
 EVENT_SOURCE = {"hospitalisation": "hospital_admissions", "medicine": "prescribing",
                 "gp_data": "gp_events", "lab_result": "lab_results"}
+# sample_event event.type -> the vocabulary its codes are in (lab_result: free text)
+EVENT_TYPE_VOCAB = {"hospitalisation": "icd10", "medicine": "bnf", "gp_data": "read"}
 
 
 def load_registry(path=None):
@@ -84,7 +86,9 @@ def measures_for(source):
 
 
 def _check_forms(vocab, codes, where, errs):
-    bad = invalid_code_forms(vocab, codes or [])
+    if not isinstance(codes, (list, tuple)):
+        return                      # shape errors are the gate's job (level 1)
+    bad = invalid_code_forms(vocab, [c for c in codes if isinstance(c, str)])
     if bad:
         label = VOCABULARIES.get(vocab, {}).get("label", vocab)
         hint = VOCABULARIES.get(vocab, {}).get("hint", "")
@@ -146,9 +150,8 @@ def check_sources(contract):
                             "missing from the registry")
             if "biobank_samples" not in SOURCES:
                 errs.append(f"{where}: registry has no 'biobank_samples' source")
-            _EVT_VOCAB = {"hospitalisation": "icd10", "medicine": "bnf", "gp_data": "read"}
-            if ev.get("type") in _EVT_VOCAB:
-                _check_forms(_EVT_VOCAB[ev["type"]], ev.get("codes"), where, errs)
+            if ev.get("type") in EVENT_TYPE_VOCAB:
+                _check_forms(EVENT_TYPE_VOCAB[ev["type"]], ev.get("codes"), where, errs)
         if isinstance(d.get("when"), dict) and d["when"].get("anchor"):
             _check_anchor(d["when"]["anchor"], where, errs)
 

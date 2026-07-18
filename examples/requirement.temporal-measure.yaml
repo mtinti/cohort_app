@@ -8,15 +8,15 @@
 project: 'Fixture: temporal + threshold criteria'
 project_type: registry
 target_n: all eligible
-schema_version: 2
+schema_version: 3
 cohorts:
-- id: bb32f212
+- id: 8c1e207d
   name: Anchored threshold cohort
   inclusion:
-    id: 1e5a16be
+    id: 22dad91b
     op: AND
     members:
-    - id: 6796aad5
+    - id: 14ef5a0e
       kind: measure
       label: Raised HbA1c in 2019
       source: lab_results
@@ -28,7 +28,7 @@ cohorts:
         window:
           from: '2019-01-01'
           to: '2019-12-31'
-    - id: a8aaea06
+    - id: b28b81fb
       kind: codes
       label: BNF ch.6 medicine before first diagnosis
       source: prescribing
