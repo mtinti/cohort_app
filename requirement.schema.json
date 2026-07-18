@@ -330,7 +330,34 @@
                 }
               }
             }
-          }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "icd"
+              ]
+            },
+            {
+              "required": [
+                "opcs"
+              ]
+            },
+            {
+              "required": [
+                "read"
+              ]
+            },
+            {
+              "required": [
+                "bnf"
+              ]
+            },
+            {
+              "required": [
+                "drug_names"
+              ]
+            }
+          ]
         },
         {
           "type": "object",
@@ -494,6 +521,9 @@
                 "event": {
                   "type": "object",
                   "additionalProperties": false,
+                  "required": [
+                    "type"
+                  ],
                   "properties": {
                     "type": {
                       "enum": [
@@ -517,6 +547,28 @@
                       "items": {
                         "type": "string",
                         "pattern": "\\S"
+                      }
+                    }
+                  },
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "lab_result"
+                      }
+                    }
+                  },
+                  "else": {
+                    "required": [
+                      "codes"
+                    ],
+                    "properties": {
+                      "codes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1
                       }
                     }
                   }

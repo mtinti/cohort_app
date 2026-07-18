@@ -414,12 +414,14 @@ def from_contract(data, issues=None):
     data = data or {}
     sv = data.get("schema_version")
     sv_out = SCHEMA_VERSION
-    if sv != SCHEMA_VERSION:
-        if sv in MIGRATABLE_VERSIONS:
+    # type(sv) is int guards membership/equality against bool (True == 1),
+    # float (2.0 == 2) and unhashable values ([] would raise on `in`)
+    if type(sv) is not int or sv != SCHEMA_VERSION:
+        if type(sv) is int and sv in MIGRATABLE_VERSIONS:
             rec(f"schema_version {sv!r} is not the supported version {SCHEMA_VERSION}; "
                 f"loaded as a draft and UPGRADED to v{SCHEMA_VERSION} — review "
                 "(and re-seal, if it was sealed) before use")
-        else:                   # unknown/future versions must NOT be relabelled
+        else:                   # unknown/future/malformed: must NOT be relabelled
             sv_out = sv
             rec(f"schema_version {sv!r} is not supported (this tool is v"
                 f"{SCHEMA_VERSION}; it migrates {sorted(MIGRATABLE_VERSIONS)}); "
@@ -585,8 +587,10 @@ def check_contract(data):
 
     unknown(data, _TOP_KEYS, "top level")
     sv = data.get("schema_version")
-    if sv != SCHEMA_VERSION:
-        errs.append(f"unsupported schema_version {sv!r} (supported: {SCHEMA_VERSION})")
+    # type(sv) is int: bool (True == 1) and float (3.0 == 3) must NOT pass
+    if type(sv) is not int or sv != SCHEMA_VERSION:
+        errs.append(f"unsupported schema_version {sv!r} "
+                    f"(supported: {SCHEMA_VERSION}, as an integer)")
     if data.get("project_type") not in PROJECT_TYPES:
         errs.append(f"project_type {data.get('project_type')!r} must be one of: "
                     + ", ".join(PROJECT_TYPES))
@@ -634,7 +638,9 @@ def check_contract(data):
         check_id(d, where)
         unknown(d, _LEAF_KEYS[k], where)
         if k == "codes":
-            present = [f for f in _CODE_FIELDS if d.get(f) is not None]
+            # present-by-KEY: an explicit null is a typed-list error (matching
+            # the JSON Schema), not silently treated as absent
+            present = [f for f in _CODE_FIELDS if f in d]
             for f in present:
                 if not _is_code_list(d[f]):
                     errs.append(f"{where}: {f} must be a non-empty list of "
@@ -867,21 +873,31 @@ def json_schema():
         "sample": {"sample_event": {
             "type": "object", "additionalProperties": False,
             "required": ["event", "direction"],
-            "properties": {"event": {"type": "object", "additionalProperties": False,
-                                     "properties": {"type": {"enum": EVENT_TYPES},
-                                                    "occurrence": {"enum": OCCURRENCE},
-                                                    "label": {"type": "string"},
-                                                    "codes": {"type": "array",
-                                                              "items": code_str}}},
+            "properties": {"event": {
+                "type": "object", "additionalProperties": False,
+                "required": ["type"],
+                "properties": {"type": {"enum": EVENT_TYPES},
+                               "occurrence": {"enum": OCCURRENCE},
+                               "label": {"type": "string"},
+                               "codes": {"type": "array", "items": code_str}},
+                # coded event types NEED codes; lab_result is free text
+                "if": {"properties": {"type": {"const": "lab_result"}}},
+                "else": {"required": ["codes"],
+                         "properties": {"codes": {"type": "array",
+                                                  "items": code_str,
+                                                  "minItems": 1}}}},
                            "direction": {"enum": DIRECTION},
                            "within": within}}},
         "note": {"text": {"type": "string"}},
     }
-    leaf_schemas = [{"type": "object", "additionalProperties": False,
-                     "required": ["id", "kind"],
-                     "properties": {**base, **props,
-                                    "kind": {"const": k}}}
-                    for k, props in leaves.items()]
+    leaf_schemas = []
+    for k, props in leaves.items():
+        ls = {"type": "object", "additionalProperties": False,
+              "required": ["id", "kind"],
+              "properties": {**base, **props, "kind": {"const": k}}}
+        if k == "codes":        # at least one vocabulary field (mirrors the gate)
+            ls["anyOf"] = [{"required": [f]} for f in _CODE_FIELDS]
+        leaf_schemas.append(ls)
     member = {"anyOf": [{"$ref": "#/definitions/container"}] + leaf_schemas}
     container = {"type": "object", "additionalProperties": False,
                  "required": ["id", "op", "members"],

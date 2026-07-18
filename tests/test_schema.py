@@ -420,8 +420,8 @@ def test_gate_requires_at_least_one_code_field():
     leaf = c["cohorts"][0]["inclusion"]["members"][0]
     del leaf["icd"]                                     # no code fields at all
     assert any("needs at least one of" in e for e in S.check_contract(c))
-    leaf["icd"] = None                                  # explicit null
-    assert any("needs at least one of" in e for e in S.check_contract(c))
+    leaf["icd"] = None                                  # explicit null = typed error
+    assert any("icd must be a non-empty list" in e for e in S.check_contract(c))
 
 
 def test_gate_requires_codes_for_coded_sample_events():
@@ -473,3 +473,69 @@ def test_fixture_ids_are_stable():
     cc = _y.safe_load(open(os.path.join(root, "examples/requirement.case-control.yaml")))
     assert cc["cohorts"][0]["id"] == "65080a14"
     assert cc["cohorts"][0]["inclusion"]["members"][0]["id"] == "d6e1b524"
+
+
+# ---------------------------------------------------------------------------
+# Review round 3 (072c685): python/JSON-Schema agreement + version typing
+# ---------------------------------------------------------------------------
+def _leaf_contract(leaf):
+    return {"project": "x", "project_type": "recruitment",
+            "schema_version": S.SCHEMA_VERSION,
+            "cohorts": [{"id": "g", "name": "G", "exclusions": [], "inclusion": {
+                "id": "c", "op": "AND", "members": [leaf]}}]}
+
+
+def test_python_and_json_schema_agree_on_code_criteria():
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    schema = S.json_schema()
+
+    def js_ok(c):
+        try:
+            jsonschema.validate(c, schema)
+            return True
+        except jsonschema.ValidationError:
+            return False
+
+    cases = [
+        ({"id": "l", "kind": "codes", "source": "hospital_admissions"}, False),
+        ({"id": "l", "kind": "codes", "source": "hospital_admissions",
+          "icd": None}, False),
+        ({"id": "l", "kind": "codes", "source": "hospital_admissions",
+          "icd": ["A00"], "opcs": None}, False),         # explicit null rejected
+        ({"id": "l", "kind": "codes", "source": "hospital_admissions",
+          "icd": ["A00"]}, True),
+        ({"id": "l", "kind": "sample", "sample_event": {
+            "event": {"type": "gp_data", "occurrence": "first"},
+            "direction": "before"}}, False),             # coded event, no codes
+        ({"id": "l", "kind": "sample", "sample_event": {
+            "event": {"type": "gp_data", "occurrence": "first", "codes": []},
+            "direction": "before"}}, False),
+        ({"id": "l", "kind": "sample", "sample_event": {
+            "event": {"type": "gp_data", "occurrence": "first", "codes": ["X1111"]},
+            "direction": "before"}}, True),
+        ({"id": "l", "kind": "sample", "sample_event": {
+            "event": {"type": "lab_result", "occurrence": "first"},
+            "direction": "before"}}, True),              # free text: codes optional
+    ]
+    for leaf, expected in cases:
+        c = _leaf_contract(leaf)
+        py = S.check_contract(c) == []
+        js = js_ok(c)
+        assert py == js == expected, (leaf, py, js, expected)
+
+
+def test_malformed_schema_versions_never_crash_or_pass():
+    for sv in ([], {}, True, False, 2.0, 3.0, "3"):
+        c = _minimal_contract()
+        c["schema_version"] = sv
+        issues = []
+        req = S.from_contract(c, issues)                # must not raise
+        assert any("schema_version" in w for w in issues)
+        assert S.to_contract(req)["schema_version"] == sv   # never relabelled
+        assert any("schema_version" in e for e in S.check_contract(c))
+    # bool True must not be treated as migratable v1 (True == 1 in python)
+    c = _minimal_contract()
+    c["schema_version"] = True
+    issues = []
+    S.from_contract(c, issues)
+    assert any("kept as-is" in w for w in issues)
