@@ -295,6 +295,12 @@ def to_contract(req):
 # ---------------------------------------------------------------------------
 def body_hash(contract_dict):
     body = {k: v for k, v in (contract_dict or {}).items() if k != "contract"}
+    # canonical form includes the version-number policy: 3.0 IS 3, so both
+    # must hash identically — otherwise loading a sealed contract whose
+    # version gets canonicalized would invalidate its approval hash
+    v = _int_version(body.get("schema_version"))
+    if v is not None:
+        body["schema_version"] = v
     canon = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 

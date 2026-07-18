@@ -581,3 +581,21 @@ def test_huge_integer_versions_do_not_crash():
     req = S.from_contract(c, issues)
     assert any("kept as-is" in w for w in issues)
     assert S.to_contract(req)["schema_version"] == 10 ** 1000
+
+
+def test_sealed_contract_survives_version_canonicalization():
+    # a sealed contract re-serialized with schema_version: 3.0 (JSON number
+    # semantics) must keep a valid approval hash through load canonicalization
+    req = S.build_example()
+    S.seal(req)
+    c = S.to_contract(req)
+    c["schema_version"] = 3.0
+    assert S.check_contract(c) == []
+    assert S.hash_status(c) == "ok"        # hash is version-canonical
+    issues = []
+    req2 = S.from_contract(c, issues)
+    assert any("canonicalized to 3" in w for w in issues)
+    c2 = S.to_contract(req2)
+    assert c2["schema_version"] == 3
+    assert S.hash_status(c2) == "ok"       # approval NOT invalidated
+    assert S.check_contract(c2) == []
