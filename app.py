@@ -401,8 +401,9 @@ def _timing_editor(work):
             occ = kradio("Index date is the", S.OCCURRENCE, ev.get("occurrence", "first"),
                          key="dlg_a_occ", horizontal=True,
                          format_func=lambda o: f"{o} occurrence")
-            codes = _tokens(karea("Event codes (one per line)", _join(ev.get("codes")),
-                                  key="dlg_a_codes", height=70))
+            split = _lines if vocab == "drug_name" else _tokens   # names contain spaces
+            codes = split(karea("Event codes (one per line)", _join(ev.get("codes")),
+                                key="dlg_a_codes", height=70))
             bad = R.invalid_code_forms(vocab, codes)
             if bad:
                 st.warning(f"invalid {R.VOCABULARIES.get(vocab, {}).get('label', vocab)}: "

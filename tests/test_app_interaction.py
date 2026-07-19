@@ -855,3 +855,31 @@ def test_codes_pasted_on_one_line_are_split(page):
     settle(page)
     leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][1]["members"][1]
     assert leaf["read"] == ["X1111", "e11d4"]
+
+
+def test_anchor_drug_names_are_not_split(page):
+    # a prescribing anchor with the drug_name vocabulary must keep
+    # 'metformin hydrochloride' as ONE name (regression: it was tokenized
+    # into two exact-match atoms, changing cohort membership)
+    page.get_by_role("button", name=re.compile(r"Add inclusion$")).click()
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name=re.compile("Condition")).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="ICD-10").fill("E11")
+    dlg.get_by_text("⏱ Timing (optional)").click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_text("Anchor to a per-patient index event").click()
+    settle(page)
+    dlg = pick(page, page.get_by_role("dialog"), 2, "prescribing")   # event source
+    dlg = pick(page, dlg, 3, "drug_name")                            # event vocabulary
+    dlg.get_by_role("textbox", name="Event codes (one per line)").fill(
+        "metformin hydrochloride")
+    page.keyboard.press("Tab")
+    settle(page)
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    settle(page)
+    anchor = download_yaml(page)["cohorts"][0]["inclusion"]["members"][-1]["when"]["anchor"]
+    assert anchor["event"]["vocab"] == "drug_name"
+    assert anchor["event"]["codes"] == ["metformin hydrochloride"]   # ONE name
