@@ -311,3 +311,21 @@ def test_cli_rejects_alias_bomb(tmp_path):
         env={**os.environ, "PYTHONPATH": ROOT}, timeout=30)
     assert r.returncode == 1
     assert "could not read contract" in r.stderr and "Traceback" not in r.stderr
+
+
+def test_cli_rejects_oversize_contract(tmp_path):
+    # oversize input is REJECTED, never truncated-and-parsed (a cut on a doc
+    # boundary could parse as a different contract)
+    import subprocess
+    import sys
+    big = tmp_path / "big.yaml"
+    with open(big, "w") as f:
+        f.write("project: p\nproject_type: recruitment\nschema_version: 3\ncohorts: []\n")
+        f.write("# " + "x" * (9 * 1024 * 1024))
+    r = subprocess.run(
+        [sys.executable, "-m", "compiler", str(big),
+         os.path.join(EX, "binding.site-a.yaml")],
+        capture_output=True, text=True, cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": ROOT}, timeout=30)
+    assert r.returncode == 1
+    assert "exceeds 8 MB" in r.stderr and "Traceback" not in r.stderr

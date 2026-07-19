@@ -31,16 +31,22 @@ def main(argv=None):
     p.add_argument("--draft", action="store_true")
     args = p.parse_args(argv)
 
+    MAX_BYTES = 8 * 1024 * 1024
     try:
-        with open(args.contract) as f:
-            # cap input size and catch parser errors (incl. RecursionError on
-            # pathologically deep YAML) so a hostile file can't crash the CLI
-            raw = f.read(8 * 1024 * 1024)
-        contract = S.safe_load_contract(raw)
+        with open(args.contract, "rb") as f:
+            # read one byte past the cap: oversize is REJECTED, never truncated
+            # (a cut landing on a document boundary could parse as a different
+            # contract — silent corruption of the exact thing we must preserve)
+            raw = f.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
+            print(f"contract exceeds {MAX_BYTES // (1024 * 1024)} MB — refusing "
+                  "(a cohort requirement is a few KB)", file=sys.stderr)
+            return 1
+        contract = S.safe_load_contract(raw.decode("utf-8"))
         if not isinstance(contract, dict):
             print("contract must be a YAML mapping", file=sys.stderr)
             return 1
-    except (OSError, yaml.YAMLError, RecursionError) as e:
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, RecursionError) as e:
         print(f"could not read contract: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
     try:

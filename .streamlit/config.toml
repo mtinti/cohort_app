@@ -7,3 +7,14 @@ primaryColor = "#0072B2"
 # cohorts hold criteria, never bulk data — a requirement.yaml is a few KB.
 # Cap uploads well below Streamlit's 200 MB default to blunt memory-DoS.
 maxUploadSize = 2
+# IMPORTANT (deployment): Streamlit binds 0.0.0.0 by default AND its origin
+# allowlist includes the host's own IPs, so the app is reachable directly on
+# http://<host-ip>:8501 — bypassing any reverse-proxy auth. Restrict the port
+# to the proxy: uncomment for a same-host proxy, or use a network policy /
+# firewall / pod-internal address for a containerised deploy. See DEPLOYMENT.md.
+# address = "127.0.0.1"
+# corsAllowedOrigins = ["https://<your-external-hostname>"]
+
+[browser]
+# no usage telemetry from a health-research deployment
+gatherUsageStats = false

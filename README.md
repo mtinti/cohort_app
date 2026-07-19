@@ -53,6 +53,7 @@ diagnosis", before/after, within n months), or both.
 * `compiler/`: site bindings, feasibility checks, IR, SQL and RDMP emitters, CLI.
 * `examples/`: worked example, three fixture contracts, two site bindings.
 * `docs/SPEC.md`: requirements spec. `plan.md`: design plan (externally reviewed).
+* `DEPLOYMENT.md`: run-behind-a-proxy checklist. `docs/security-review.md`: security review.
 * `scripts/shoot_ui.py`: autonomous screenshot harness (headless render to PNG).
 * `tests/`: schema, registry, compiler and Playwright interaction tests (100 in total).
 * `ui_shots/`: generated screenshots (gitignored).

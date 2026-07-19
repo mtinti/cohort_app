@@ -1,5 +1,12 @@
-streamlit>=1.58
-pyyaml>=6
-# dev / test only:
-playwright>=1.40
-pytest>=8
+# Pinned for reproducibility (a contract pipeline shouldn't shift under a
+# floating dependency). These exact versions were security-reviewed on
+# 2026-07-19 (streamlit 1.58.0 + pyyaml 6.0.3: zero known CVEs per OSV).
+# Keep current by running `pip-audit` (or an OSV scan) in CI and bumping the
+# pins deliberately — do NOT loosen to `>=`.
+streamlit==1.58.0
+pyyaml==6.0.3
+
+# dev / test only
+playwright==1.60.0
+pytest==9.1.1
+jsonschema==4.26.0

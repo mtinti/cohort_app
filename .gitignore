@@ -5,3 +5,6 @@ __pycache__/
 venv/
 ui_shots/
 .streamlit/secrets.toml
+
+# security review kept local, not tracked
+docs/security-review.md
