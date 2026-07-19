@@ -92,8 +92,11 @@ def _check_forms(vocab, codes, where, errs):
     if bad:
         label = VOCABULARIES.get(vocab, {}).get("label", vocab)
         hint = VOCABULARIES.get(vocab, {}).get("hint", "")
-        errs.append(f"{where}: invalid {label} code(s): {', '.join(map(str, bad))}"
-                    + (f" — allowed: {hint}" if hint else ""))
+        msg = f"{where}: invalid {label} code(s): {', '.join(map(str, bad))}"
+        if any(re.search(r"\s", str(b)) for b in bad):
+            msg += (" (an entry contains whitespace — did several codes end up "
+                    "in ONE entry? use one code per entry)")
+        errs.append(msg + (f" — allowed: {hint}" if hint else ""))
 
 
 def _check_anchor(a, where, errs):

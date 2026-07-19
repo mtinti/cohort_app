@@ -838,3 +838,20 @@ def test_gate_clean_load_adjustment_is_not_a_draft(page, tmp_path):
     assert page.get_by_text("passes the strict contract gate").is_visible()
     assert page.get_by_text("canonicalized to 3").is_visible()
     assert page.get_by_text("does not pass the strict contract gate").count() == 0
+
+
+def test_codes_pasted_on_one_line_are_split(page):
+    # 'X1111 e11d4' pasted into the READ field becomes TWO codes, not one
+    # invalid 11-character one; ✎ order: root, Adults, OR, hospital, gp
+    page.get_by_role("button", name="✎").nth(4).click()
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    dlg.get_by_role("textbox", name="READ").fill("X1111 e11d4")
+    page.keyboard.press("Tab")
+    settle(page)
+    dlg = page.get_by_role("dialog")
+    assert dlg.get_by_text(re.compile("invalid READ")).count() == 0
+    dlg.get_by_role("button", name="Save").click()
+    settle(page)
+    leaf = download_yaml(page)["cohorts"][0]["inclusion"]["members"][1]["members"][1]
+    assert leaf["read"] == ["X1111", "e11d4"]

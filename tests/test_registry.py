@@ -90,3 +90,12 @@ def test_check_sources_flags_bad_forms_everywhere():
 
 def test_opcs_legal_on_hospital_admissions():
     assert "opcs4" in R.vocabs_for("hospital_admissions")
+
+
+def test_space_joined_entry_gets_a_hint():
+    c = S.to_contract(S.build_example())
+    for m in c["cohorts"][0]["inclusion"]["members"][1]["members"]:
+        if m.get("read"):
+            m["read"] = ["X1111 e11d4"]          # two codes pasted into one entry
+    errs = R.check_sources(c)
+    assert any("did several codes end up in ONE entry" in e for e in errs)

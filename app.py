@@ -8,6 +8,7 @@ exclusions removed in turn.
 See docs/SPEC.md. Schema lives in requirement_schema.py (single source of truth).
 """
 import copy
+import re as _re
 
 import yaml
 import streamlit as st
@@ -227,6 +228,13 @@ def _lines(txt):
     return [ln.strip() for ln in (txt or "").splitlines() if ln.strip()]
 
 
+def _tokens(txt):
+    """Clinical codes: split on newlines, commas, semicolons AND spaces, so a
+    pasted 'X1111 e11d4' becomes two codes instead of one invalid 11-char one.
+    (Drug names keep _lines — they legitimately contain spaces.)"""
+    return [t for t in _re.split(r"[\s,;]+", txt or "") if t]
+
+
 def _join(lst):
     return "\n".join(lst or [])
 
@@ -393,8 +401,8 @@ def _timing_editor(work):
             occ = kradio("Index date is the", S.OCCURRENCE, ev.get("occurrence", "first"),
                          key="dlg_a_occ", horizontal=True,
                          format_func=lambda o: f"{o} occurrence")
-            codes = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
-                                 key="dlg_a_codes", height=70))
+            codes = _tokens(karea("Event codes (one per line)", _join(ev.get("codes")),
+                                  key="dlg_a_codes", height=70))
             bad = R.invalid_code_forms(vocab, codes)
             if bad:
                 st.warning(f"invalid {R.VOCABULARIES.get(vocab, {}).get('label', vocab)}: "
@@ -455,13 +463,15 @@ def leaf_dialog():
         cols = st.columns(2) if len(shown) > 1 else [st.container()]
         for i, f in enumerate(shown):
             with cols[i % len(cols)]:
-                work[f] = _lines(karea(labels[f], _join(work.get(f)),
-                                       key=f"dlg_codes_{f}", height=90))
+                split = _lines if f == "drug_names" else _tokens
+                work[f] = split(karea(labels[f], _join(work.get(f)),
+                                      key=f"dlg_codes_{f}", height=90))
                 bad = R.invalid_code_forms(R.VOCAB_FIELDS[f], work[f])
                 if bad:
                     st.warning(f"invalid {labels[f]}: {', '.join(bad)} — allowed: "
                                + R.VOCABULARIES[R.VOCAB_FIELDS[f]].get("hint", ""))
-        st.caption("one code per line · ranges like F00-F09 or C00-D48 (ICD-10 / OPCS-4)")
+        st.caption("codes separated by newlines, spaces or commas · ranges like "
+                   "F00-F09 or C00-D48 (ICD-10 / OPCS-4) · drug names: one per line")
         # codes left over from a previous source are NEVER dropped silently —
         # surface them with an explicit remove action
         for f, v in R.VOCAB_FIELDS.items():
@@ -504,9 +514,10 @@ def leaf_dialog():
         ev["occurrence"] = kradio("Occurrence (defines the index date)", S.OCCURRENCE,
                                   ev["occurrence"], key="dlg_ev_occ", horizontal=True)
         ev["label"] = ktext("Event label", ev.get("label", ""), key="dlg_ev_label")
-        ev["codes"] = _lines(karea("Event codes (one per line)", _join(ev.get("codes")),
-                                   key="dlg_ev_codes", height=80))
+        raw = karea("Event codes (one per line)", _join(ev.get("codes")),
+                    key="dlg_ev_codes", height=80)
         ev_vocab = R.EVENT_TYPE_VOCAB.get(ev["type"])
+        ev["codes"] = _tokens(raw) if ev_vocab else _lines(raw)   # lab_result: free text
         if ev_vocab:                      # lab_result is free text: no form check
             bad = R.invalid_code_forms(ev_vocab, ev["codes"])
             if bad:
