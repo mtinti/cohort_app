@@ -248,6 +248,14 @@ existence, RDMP structural rules.
   root. No DB/server.
 - **NFR2 — No PII at rest.** Holds *criteria*, not patient data; nothing persisted
   server-side; output is a download.
+- **NFR2a — Deployment posture (security).** The app has no built-in auth or
+  security response headers and MUST run behind a hardened reverse proxy /
+  identity layer (see `plan.md` §6.8); direct internet exposure is unsafe.
+  Separately, the *contract → script* compilation path is injection-hardened
+  and in scope: the strict gate rejects control characters in names/labels,
+  site bindings must use valid SQL identifiers (no injected SQL), and the SQL
+  and RDMP emitters escape at every output boundary — so a gate-clean contract
+  cannot shape the generated script's syntax (`tests/test_security.py`).
 - **NFR3 — Schema parity.** The form imports a single shared schema module
   (`requirement_schema.py` or `requirement.schema.json`); a test asserts the
   round-trip form-dict → YAML → loads → validates → is accepted by the pipeline.

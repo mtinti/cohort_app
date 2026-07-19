@@ -12,7 +12,7 @@ import requirement_schema as S
 
 from .binding import CompileError, src
 from .feasibility import EVENT_TYPE_VOCAB
-from .ir import DRAFT_BANNER, build_ir, precheck, provenance
+from .ir import DRAFT_BANNER, build_ir, oneline, precheck, provenance
 
 _RANGE = re.compile(r"^([A-Z])([0-9]{2})-([A-Z])?([0-9]{2})$")
 
@@ -208,7 +208,7 @@ def compile_sql(contract, binding, draft=False):
         head = ""
         if draft and S.notes_in(contract):
             head = DRAFT_BANNER + "\n"
-        head += (f"-- cohort group: {g['name']} (id {g['id']})\n"
+        head += (f"-- cohort group: {oneline(g['name'])} (id {oneline(g['id'])})\n"
                  f"-- {provenance(contract, binding)}\n")
         expr = g["expr"]
         if not expr[2]:                       # no exclusions -> no EXCEPT chain

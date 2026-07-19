@@ -12,10 +12,17 @@ import registry as R
 import requirement_schema as S
 
 from .binding import src, catalogue
-from .ir import DRAFT_BANNER, build_ir, precheck, provenance
+from .ir import DRAFT_BANNER, build_ir, oneline, precheck, provenance
 from .sqlgen import leaf_where
 
 OP_NAME = {"and": "INTERSECT", "or": "UNION"}
+
+
+def _dq(s):
+    """Escape a value for an RDMP double-quoted command argument. Control
+    characters are collapsed first (a newline inside an argument would start
+    a new command line), then backslashes and quotes are escaped."""
+    return oneline(s).replace("\\", "\\\\").replace('"', '\\"')
 
 
 class _Vars:
@@ -37,11 +44,11 @@ def _leaf_cmds(leaf, parent, binding, v, cmds):
     cat = catalogue(src(binding, source))
     agg = v.aggregate()
     cmds.append(f'AddCatalogueToCohortIdentificationSetContainer '
-                f'CohortAggregateContainer:{parent} Catalogue:"{cat}"   # => {agg}')
+                f'CohortAggregateContainer:{parent} Catalogue:"{_dq(cat)}"   # => {agg}')
     where = " AND ".join(leaf_where(leaf, binding, alias=""))
     name = leaf.get("label") or f"{leaf['kind']} {leaf.get('id', '')}".strip()
     cmds.append(f'CreateNewFilter AggregateConfiguration:{agg} '
-                f'"{name}" "{where}"')
+                f'"{_dq(name)}" "{_dq(where)}"')
 
 
 def _container_cmds(expr, parent, binding, v, cmds):
@@ -49,7 +56,8 @@ def _container_cmds(expr, parent, binding, v, cmds):
         if child[0] == "leaf":
             if child[1].get("kind") == "note":     # draft mode only (precheck blocks otherwise)
                 cmds.append(f'# TODO (draft): unresolved note criterion '
-                            f'{child[1].get("id")} "{child[1].get("label", "")}" — NOT built')
+                            f'{oneline(child[1].get("id"))} '
+                            f'"{_dq(child[1].get("label", ""))}" — NOT built')
                 continue
             _leaf_cmds(child[1], parent, binding, v, cmds)
         else:
@@ -61,7 +69,7 @@ def _container_cmds(expr, parent, binding, v, cmds):
 
 def _group_cmds(g, binding):
     v = _Vars()
-    cmds = [f'CreateNewCohortIdentificationConfiguration "{g["name"]}"']
+    cmds = [f'CreateNewCohortIdentificationConfiguration "{_dq(g["name"])}"']
     expr = g["expr"]
     inclusion, exclusions = expr[1], expr[2]
     root = v.container()
@@ -94,7 +102,7 @@ def compile_rdmp(contract, binding, draft=False):
         lines = []
         if draft and S.notes_in(contract):
             lines.append(f"# {DRAFT_BANNER}")
-        lines += [f"# cohort group: {g['name']} (id {g['id']})",
+        lines += [f"# cohort group: {oneline(g['name'])} (id {oneline(g['id'])})",
                   f"# {provenance(contract, binding)}",
                   "# prototype emitter: anchored/sample criteria are emitted as",
                   "# correlated-subquery filters; a production build would use an",

@@ -52,10 +52,18 @@ def build_ir(contract):
             for g in contract["cohorts"]]
 
 
+def oneline(s):
+    """Defense in depth for comment/quoted output contexts: collapse control
+    characters so no upstream value can break the emitted line structure."""
+    import re
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", str(s))
+
+
 def provenance(contract, binding):
     hdr = contract.get("contract") or {}
-    return (f"contract {hdr.get('id', '(unsealed)')} "
-            f"v{hdr.get('version', '?')} sha256:{(hdr.get('body_sha256') or '')[:12] or 'n/a'}"
-            f" | schema v{contract.get('schema_version')}"
-            f" | registry v{R.REGISTRY_VERSION}"
-            f" | binding {binding.get('site')} v{binding.get('binding_version')}")
+    return oneline(
+        f"contract {hdr.get('id', '(unsealed)')} "
+        f"v{hdr.get('version', '?')} sha256:{(hdr.get('body_sha256') or '')[:12] or 'n/a'}"
+        f" | schema v{contract.get('schema_version')}"
+        f" | registry v{R.REGISTRY_VERSION}"
+        f" | binding {binding.get('site')} v{binding.get('binding_version')}")

@@ -329,6 +329,16 @@ prototype. Recorded here so the cut line is explicit:
    generated JSON Schema suffice.
 7. **Formal schema migrations** between contract versions. Until v2 exists,
    the strict gate simply rejects unknown versions.
+8. **HTTP-layer hardening / deployment posture.** The Streamlit app serves
+   with no authentication and no security response headers (CSP, frame
+   options, MIME-sniffing, referrer policy, HSTS). This is acceptable ONLY
+   as the spec has always scoped it (NFR1: local/internal, no PII at rest) —
+   i.e. behind a hardened reverse proxy / identity layer that supplies those
+   controls. **Direct internet exposure is out of scope and unsafe.** A
+   deployment must document the proxy/auth layer; this is a deployment
+   requirement, not an app change. (Injection hardening of the *contract →
+   script* path — control-char gate, binding identifier validation, emitter
+   escaping — is DONE, not deferred; see §5 and tests/test_security.py.)
 
 ## 7. Risks / open questions (input wanted)
 

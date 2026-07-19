@@ -523,11 +523,18 @@ _LEAF_KEYS = {
     "note": {"id", "kind", "label", "text"},
 }
 _CODE_FIELDS = ("icd", "opcs", "read", "bnf", "drug_names")
+# control characters: text fields are single-line (no \t\n\r either); note
+# text may be multi-line but never carries other control characters. This is
+# an INJECTION guard: names/labels flow into generated SQL comments and RDMP
+# command arguments, so their shape is part of the output's integrity.
+_CTRL_ANY = re.compile(r"[\x00-\x1f\x7f]")
+_CTRL_NON_WS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _is_code_list(v):
     return (isinstance(v, list) and v
-            and all(isinstance(x, str) and x.strip() for x in v))
+            and all(isinstance(x, str) and x.strip()
+                    and not _CTRL_ANY.search(x) for x in v))
 
 
 _WHEN_KEYS = {"window", "anchor"}
@@ -585,6 +592,9 @@ def _check_when(w, where, errs):
                 errs.append(f"{where}: anchor.event.source is required")
             if not ev.get("vocab"):
                 errs.append(f"{where}: anchor.event.vocab is required")
+            lbl = ev.get("label")
+            if isinstance(lbl, str) and _CTRL_ANY.search(lbl):
+                errs.append(f"{where}: anchor event label contains control characters")
             if not _is_code_list(ev.get("codes")):
                 errs.append(f"{where}: anchor.event.codes must be a non-empty "
                             "list of code strings")
@@ -633,7 +643,23 @@ def check_contract(data):
         if extra:
             errs.append(f"{where}: unknown field(s): " + ", ".join(sorted(extra)))
 
+    def txt(d, field, where, multiline=False):
+        v = d.get(field)
+        if isinstance(v, str) and (_CTRL_NON_WS if multiline else _CTRL_ANY).search(v):
+            errs.append(f"{where}: {field} contains control characters "
+                        "(newlines/tabs are not allowed"
+                        + (" here" if not multiline else " except line breaks") + ")")
+
     unknown(data, _TOP_KEYS, "top level")
+    for f in ("project", "target_n", "ticket"):
+        txt(data, f, "top level")
+    hdr = data.get("contract")
+    if isinstance(hdr, dict):
+        for f in ("id", "requested_by", "approved_by", "approved_on"):
+            txt(hdr, f, "contract header")
+        refs = hdr.get("references")
+        if isinstance(refs, dict):
+            txt(refs, "extraction_spec", "contract header")
     sv = data.get("schema_version")
     # integral numbers accepted (3.0 == 3, matching JSON Schema's const: 3);
     # bools/strings/containers are rejected by _int_version
@@ -671,6 +697,7 @@ def check_contract(data):
         if "kind" not in d and ("op" in d or "members" in d):
             check_id(d, where)
             unknown(d, _CONTAINER_KEYS, where)
+            txt(d, "label", where)
             if d.get("op") not in OPS:
                 errs.append(f"{where}: container op {d.get('op')!r} must be AND or OR")
             ms = d.get("members")
@@ -686,6 +713,15 @@ def check_contract(data):
             return
         check_id(d, where)
         unknown(d, _LEAF_KEYS[k], where)
+        for f in ("label", "source", "measure", "unit", "residence", "simd"):
+            if f in _LEAF_KEYS[k]:
+                txt(d, f, where)
+        if k == "note":
+            txt(d, "text", where, multiline=True)
+        if k == "sample":
+            ev_ = (d.get("sample_event") or {}).get("event")
+            if isinstance(ev_, dict):
+                txt(ev_, "label", where)
         if k == "codes":
             # present-by-KEY: an explicit null is a typed-list error (matching
             # the JSON Schema), not silently treated as absent
@@ -749,6 +785,7 @@ def check_contract(data):
             continue
         check_id(g, gname)
         unknown(g, _GROUP_KEYS, gname)
+        txt(g, "name", gname)
         inc = g.get("inclusion")
         if (not isinstance(inc, dict) or "kind" in inc
                 or not ("op" in inc or "members" in inc)):
