@@ -38,6 +38,8 @@ import os
 import re
 import uuid
 
+import yaml
+
 import registry as R
 
 ENABLE_SAMPLES = os.environ.get("COHORT_ENABLE_SAMPLES", "").lower() in ("1", "true", "yes", "on")
@@ -105,6 +107,41 @@ _DEMOG_SRC = "demographics"
 
 def _id():
     return uuid.uuid4().hex[:8]
+
+
+# A contract is a plain tree — it never legitimately uses YAML anchors/aliases.
+# Aliases let a tiny file expand into an exponential shared-reference graph
+# (an "alias bomb": every reference re-visits the same subtree), which a depth
+# limit alone does NOT stop. Reject aliases at the untrusted parse boundary so
+# the graph can never form. MAX_NODES (below) is the second line of defense in
+# the validator itself, for callers that build dicts programmatically.
+class _NoAliasLoader(yaml.SafeLoader):
+    pass
+
+
+def _forbid_alias(loader, node):
+    raise yaml.constructor.ConstructorError(
+        None, None, "YAML anchors/aliases are not allowed in a contract", node.start_mark)
+
+
+_NoAliasLoader.add_constructor(None, _NoAliasLoader.construct_undefined)
+# override alias composition: any '*ref' raises instead of sharing a node
+_NoAliasLoader.compose_node = (lambda self, parent, index, _orig=yaml.SafeLoader.compose_node:
+                               _no_alias_compose(self, parent, index, _orig))
+
+
+def _no_alias_compose(self, parent, index, orig):
+    if self.check_event(yaml.events.AliasEvent):
+        event = self.get_event()
+        raise yaml.constructor.ConstructorError(
+            None, None, "YAML anchors/aliases are not allowed in a contract",
+            event.start_mark)
+    return orig(self, parent, index)
+
+
+def safe_load_contract(text):
+    """Parse contract YAML with anchors/aliases rejected (alias-bomb guard)."""
+    return yaml.load(text, Loader=_NoAliasLoader)
 
 
 # ---------------------------------------------------------------------------
@@ -400,13 +437,18 @@ def _parse_legacy_within(s, rec, where):
     return {"n": None, "unit": "months"}
 
 
-def _build_member(d, rec, depth=1):
+def _build_member(d, rec, depth=1, budget=None):
     """Inverse of _clean: a contract dict -> a UI node.
 
     DRAFT-mode tolerant: unknown/unparseable members are kept VISIBLE as notes
     and every such coercion is reported via rec(). Semantics are never changed
     silently — check_contract() is the fail-closed path.
     """
+    if budget is None:
+        budget = [MAX_NODES]
+    budget[0] -= 1
+    if budget[0] <= 0:           # total-visit cap (shared-ref / alias-bomb guard)
+        raise _TooManyNodes()
     if depth > MAX_NESTING:      # refuse to recurse into a hostile deep tree
         rec(f"nesting deeper than {MAX_NESTING} truncated to a note")
         return new_note("(too deeply nested)", "truncated on load")
@@ -419,7 +461,7 @@ def _build_member(d, rec, depth=1):
         if d.get("op", "AND") not in OPS:
             rec(f"container op {d.get('op')!r} is not AND/OR (kept as authored)")
         return _keep_id(new_container(d.get("op", "AND"), d.get("label", ""),
-                                      [_build_member(m, rec, depth + 1)
+                                      [_build_member(m, rec, depth + 1, budget)
                                        for m in d.get("members", [])]), d)
     k = d.get("kind")
     lbl = d.get("label", "")
@@ -499,17 +541,26 @@ def from_contract(data, issues=None):
            "contract": dict(data["contract"]) if isinstance(data.get("contract"), dict) else None,
            "schema_version": sv_out,
            "cohorts": []}
-    for gd in data.get("cohorts", []) or []:
-        inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []}, rec)
-        if inc.get("node") != "container":               # inclusion must be a container
-            rec(f"group '{gd.get('name', '')}': inclusion was a single condition; "
-                "wrapped in an AND container")
-            inc = new_container("AND", members=[inc])
-        g = {"_id": _id(), "name": gd.get("name", ""),
-             "inclusion": inc,
-             "exclusions": [_build_member(m, rec) for m in (gd.get("exclusions") or [])]}
-        _keep_id(g, gd)
-        req["cohorts"].append(g)
+    budget = [MAX_NODES]         # shared across the whole load (alias-bomb guard)
+    try:
+        for gd in data.get("cohorts", []) or []:
+            inc = _build_member(gd.get("inclusion") or {"op": "AND", "members": []},
+                                rec, budget=budget)
+            if inc.get("node") != "container":           # inclusion must be a container
+                rec(f"group '{gd.get('name', '')}': inclusion was a single condition; "
+                    "wrapped in an AND container")
+                inc = new_container("AND", members=[inc])
+            g = {"_id": _id(), "name": gd.get("name", ""),
+                 "inclusion": inc,
+                 "exclusions": [_build_member(m, rec, budget=budget)
+                                for m in (gd.get("exclusions") or [])]}
+            _keep_id(g, gd)
+            req["cohorts"].append(g)
+    except _TooManyNodes:
+        rec(f"file has more than {MAX_NODES} nodes — not loaded (a shared-"
+            "reference/alias structure is not allowed)")
+        req["cohorts"] = [new_group("Group 1")]
+        return req
     if not req["cohorts"]:
         rec("file has no cohorts; started an empty group")
         req["cohorts"] = [new_group("Group 1")]
@@ -551,6 +602,15 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # containers may nest, but not unboundedly: a contract nested past this depth
 # is rejected instead of exhausting the recursion stack (real cohorts are ~3).
 MAX_NESTING = 64
+# total nodes any tree-walk will visit before aborting. Bounds work even when
+# a shared-reference graph (alias bomb, or a programmatically-aliased dict)
+# makes the visit count explode independently of depth. Real contracts have
+# tens of nodes; 100k is astronomically generous yet caps CPU/memory.
+MAX_NODES = 100_000
+
+
+class _TooManyNodes(Exception):
+    """Internal: a tree-walk exceeded MAX_NODES (shared-ref / alias-bomb guard)."""
 
 
 def _is_code_list(v):
@@ -701,6 +761,7 @@ def check_contract(data):
             errs.append("contract is 'agreed' but the body has CHANGED since it was "
                         "sealed (body_sha256 does not match)")
     seen = set()
+    budget = [MAX_NODES]
 
     def check_id(d, where):
         i = d.get("id")
@@ -716,6 +777,9 @@ def check_contract(data):
             seen.add(i)
 
     def member(d, where, depth=1):
+        budget[0] -= 1
+        if budget[0] <= 0:       # total-visit cap: catches alias-bomb expansion
+            raise _TooManyNodes()
         if depth > MAX_NESTING:
             errs.append(f"{where}: nesting deeper than {MAX_NESTING} is not allowed")
             return
@@ -811,26 +875,30 @@ def check_contract(data):
     if not isinstance(cohorts, list) or not cohorts:
         errs.append("cohorts must be a non-empty list")
         return errs
-    for gi, g in enumerate(cohorts, 1):
-        gname = (g.get("name") if isinstance(g, dict) else None) or f"group {gi}"
-        if not isinstance(g, dict):
-            errs.append(f"{gname}: group must be a mapping")
-            continue
-        check_id(g, gname)
-        unknown(g, _GROUP_KEYS, gname)
-        txt(g, "name", gname)
-        inc = g.get("inclusion")
-        if (not isinstance(inc, dict) or "kind" in inc
-                or not ("op" in inc or "members" in inc)):
-            errs.append(f"{gname}: inclusion must be a container (op + members)")
-        else:
-            member(inc, f"{gname} inclusion")
-        ex = g.get("exclusions", [])
-        if not isinstance(ex, list):
-            errs.append(f"{gname}: exclusions must be a list")
-        else:
-            for j, m in enumerate(ex, 1):
-                member(m, f"{gname} exclusion {j}")
+    try:
+        for gi, g in enumerate(cohorts, 1):
+            gname = (g.get("name") if isinstance(g, dict) else None) or f"group {gi}"
+            if not isinstance(g, dict):
+                errs.append(f"{gname}: group must be a mapping")
+                continue
+            check_id(g, gname)
+            unknown(g, _GROUP_KEYS, gname)
+            txt(g, "name", gname)
+            inc = g.get("inclusion")
+            if (not isinstance(inc, dict) or "kind" in inc
+                    or not ("op" in inc or "members" in inc)):
+                errs.append(f"{gname}: inclusion must be a container (op + members)")
+            else:
+                member(inc, f"{gname} inclusion")
+            ex = g.get("exclusions", [])
+            if not isinstance(ex, list):
+                errs.append(f"{gname}: exclusions must be a list")
+            else:
+                for j, m in enumerate(ex, 1):
+                    member(m, f"{gname} exclusion {j}")
+    except _TooManyNodes:
+        errs.append(f"contract has more than {MAX_NODES} nodes — refusing "
+                    "(a shared-reference/alias structure is not allowed)")
     return errs
 
 

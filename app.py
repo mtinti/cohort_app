@@ -716,7 +716,7 @@ def sidebar():
             sig = (up.name, up.size)
             if st.session_state.get("_loaded_sig") != sig:       # load each new file once
                 try:
-                    data = yaml.safe_load(up.getvalue().decode("utf-8"))
+                    data = S.safe_load_contract(up.getvalue().decode("utf-8"))
                     issues = []
                     gate = S.check_contract(data)
                     st.session_state.req = S.from_contract(data, issues)

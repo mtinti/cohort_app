@@ -36,7 +36,7 @@ def main(argv=None):
             # cap input size and catch parser errors (incl. RecursionError on
             # pathologically deep YAML) so a hostile file can't crash the CLI
             raw = f.read(8 * 1024 * 1024)
-        contract = yaml.safe_load(raw)
+        contract = S.safe_load_contract(raw)
         if not isinstance(contract, dict):
             print("contract must be a YAML mapping", file=sys.stderr)
             return 1

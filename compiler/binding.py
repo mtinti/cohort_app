@@ -46,7 +46,8 @@ class CompileError(Exception):
 
 def load_binding(path):
     with open(path) as f:
-        b = yaml.safe_load(f)
+        import requirement_schema as _S
+        b = _S.safe_load_contract(f.read())      # reject alias bombs at parse
     problems = check_binding(b)
     if problems:
         raise CompileError([f"binding {path}: {p}" for p in problems])

@@ -251,3 +251,63 @@ def test_cli_rejects_unparseable_contract(tmp_path):
     assert r.returncode == 1                                # clean exit, not a crash
     assert "could not read contract" in r.stderr
     assert "Traceback" not in r.stderr
+
+
+# --- alias-bomb / shared-reference expansion DoS ----------------------------
+def _alias_bomb_yaml(levels=13):
+    doc = ("base: &a0\n  id: c0\n  op: AND\n  members: "
+           "[{id: l, kind: codes, source: hospital_admissions, icd: [A00]}]\n")
+    for i in range(1, levels):
+        doc += f"x{i}: &a{i}\n  id: c{i}\n  op: AND\n  members: [*a{i-1}, *a{i-1}, *a{i-1}]\n"
+    return doc
+
+
+def test_alias_yaml_rejected_at_parse():
+    # a tiny file whose aliases expand to millions of nodes must be refused
+    # at the parse boundary (upload + CLI use safe_load_contract)
+    with pytest.raises(yaml.YAMLError):
+        S.safe_load_contract(_alias_bomb_yaml())
+    # a normal contract still parses
+    assert S.safe_load_contract(yaml.dump(S.to_contract(S.build_example())))
+
+
+def _shared_ref_contract(levels=20, fanout=3):
+    node = {"id": "c0", "op": "AND", "members": [
+        {"id": "l", "kind": "codes", "source": "hospital_admissions", "icd": ["A00"]}]}
+    for i in range(1, levels):
+        node = {"id": f"c{i}", "op": "AND", "members": [node] * fanout}   # shared refs
+    return {"project": "p", "project_type": "recruitment", "schema_version": 3,
+            "cohorts": [{"id": "g", "name": "G", "exclusions": [], "inclusion": node}]}
+
+
+def test_visit_budget_stops_shared_ref_expansion():
+    import time
+    c = _shared_ref_contract()                          # would be millions of visits
+    t = time.time()
+    errs = S.check_contract(c)                          # bounded by MAX_NODES
+    assert time.time() - t < 3
+    assert any("more than" in e and "nodes" in e for e in errs)
+
+
+def test_visit_budget_in_draft_load():
+    import time
+    issues = []
+    t = time.time()
+    req = S.from_contract(_shared_ref_contract(), issues)
+    assert time.time() - t < 3
+    assert any("more than" in w for w in issues)
+    assert req["cohorts"]                               # falls back to a fresh group
+
+
+def test_cli_rejects_alias_bomb(tmp_path):
+    import subprocess
+    import sys
+    bomb = tmp_path / "bomb.yaml"
+    bomb.write_text(_alias_bomb_yaml())
+    r = subprocess.run(
+        [sys.executable, "-m", "compiler", str(bomb),
+         os.path.join(EX, "binding.site-a.yaml")],
+        capture_output=True, text=True, cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": ROOT}, timeout=30)
+    assert r.returncode == 1
+    assert "could not read contract" in r.stderr and "Traceback" not in r.stderr
