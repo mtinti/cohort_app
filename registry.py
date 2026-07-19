@@ -158,14 +158,14 @@ def check_sources(contract):
         if isinstance(d.get("when"), dict) and d["when"].get("anchor"):
             _check_anchor(d["when"]["anchor"], where, errs)
 
-    def member(d, where):
-        if not isinstance(d, dict):
+    def member(d, where, depth=1):
+        if depth > 64 or not isinstance(d, dict):   # bound recursion (DoS guard)
             return
         if d.get("kind"):                 # a leaf always carries `kind`
             leaf(d, where)
         elif "op" in d or "members" in d:
             for j, m in enumerate(d.get("members") or [], 1):
-                member(m, f"{where} > member {j}")
+                member(m, f"{where} > member {j}", depth + 1)
 
     for gi, g in enumerate((contract or {}).get("cohorts") or [], 1):
         if not isinstance(g, dict):

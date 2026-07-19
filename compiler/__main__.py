@@ -31,12 +31,25 @@ def main(argv=None):
     p.add_argument("--draft", action="store_true")
     args = p.parse_args(argv)
 
-    with open(args.contract) as f:
-        contract = yaml.safe_load(f)
+    try:
+        with open(args.contract) as f:
+            # cap input size and catch parser errors (incl. RecursionError on
+            # pathologically deep YAML) so a hostile file can't crash the CLI
+            raw = f.read(8 * 1024 * 1024)
+        contract = yaml.safe_load(raw)
+        if not isinstance(contract, dict):
+            print("contract must be a YAML mapping", file=sys.stderr)
+            return 1
+    except (OSError, yaml.YAMLError, RecursionError) as e:
+        print(f"could not read contract: {type(e).__name__}: {e}", file=sys.stderr)
+        return 1
     try:
         binding = load_binding(args.binding)
     except CompileError as e:
         print("binding is invalid:\n  " + "\n  ".join(e.problems), file=sys.stderr)
+        return 1
+    except (OSError, yaml.YAMLError, RecursionError) as e:
+        print(f"could not read binding: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
     if args.check:
@@ -65,7 +78,9 @@ def main(argv=None):
     for r in results:
         if args.out:
             os.makedirs(args.out, exist_ok=True)
-            path = os.path.join(args.out, f"{r['id']}.{ext}")
+            # ids are gate-validated to a safe charset; basename is a second
+            # guard so a crafted id can never write outside --out
+            path = os.path.join(args.out, f"{os.path.basename(r['id'])}.{ext}")
             with open(path, "w") as f:
                 f.write(r[key])
             print(f"wrote {path}  ({r['name']})")

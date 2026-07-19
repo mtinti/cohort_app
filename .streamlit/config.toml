@@ -2,3 +2,8 @@
 # Okabe-Ito blue — colour-blind-safe primary (replaces the default red used for
 # buttons/focus, which is hard for red-green colour blindness).
 primaryColor = "#0072B2"
+
+[server]
+# cohorts hold criteria, never bulk data — a requirement.yaml is a few KB.
+# Cap uploads well below Streamlit's 200 MB default to blunt memory-DoS.
+maxUploadSize = 2

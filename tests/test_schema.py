@@ -255,7 +255,7 @@ def test_measure_gate_checks():
     c["cohorts"][0]["inclusion"]["members"][1]["value"] = "high"
     errs = S.check_contract(c)
     assert any("measure op" in e for e in errs)
-    assert any("must be a number" in e for e in errs)
+    assert any("must be a finite number" in e for e in errs)
 
 
 def test_when_gate_checks():

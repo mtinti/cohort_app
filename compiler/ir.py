@@ -19,9 +19,17 @@ DRAFT_BANNER = "!! NON-EXECUTABLE DRAFT — contains unresolved `note` criteria 
 
 
 def precheck(contract, binding, draft=False):
-    """Run validation levels 1-3 + the no-notes rule. Raises CompileError."""
-    problems = ["[gate] " + e for e in S.check_contract(contract)]
-    problems += ["[registry] " + e for e in R.check_sources(contract)]
+    """Run validation levels 1-3 + the no-notes rule. Raises CompileError.
+
+    The strict GATE runs first and, if it fails, we raise immediately: the
+    later walkers (registry, notes, feasibility) recurse over the member tree
+    and must not run on structurally-invalid input (e.g. pathologically deep
+    nesting the gate rejects — running them anyway would risk a stack crash).
+    """
+    gate = ["[gate] " + e for e in S.check_contract(contract)]
+    if gate:
+        raise CompileError(gate)
+    problems = ["[registry] " + e for e in R.check_sources(contract)]
     problems += ["[binding] " + e for e in check_binding(binding)]
     notes = S.notes_in(contract)
     if notes and not draft:

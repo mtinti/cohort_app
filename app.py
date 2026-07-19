@@ -240,8 +240,15 @@ def _join(lst):
 
 
 # ----------------------------- summaries (HTML) ----------------------------
+# EVERY value interpolated into an unsafe_allow_html string MUST go through
+# _esc — including numbers/enums. A DRAFT-loaded (gate-failing) upload can carry
+# a string in a field the schema expects to be numeric/enum (e.g. measure
+# value, age, direction), and the tree renders before validation runs, so an
+# unescaped numeric field is a stored-XSS sink. _esc also escapes quotes so a
+# value placed in an HTML attribute cannot break out of it.
 def _esc(s):
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&#39;"))
 
 
 def _when_lines(n):
@@ -253,11 +260,13 @@ def _when_lines(n):
     a = w.get("anchor")
     if a:
         wi = a.get("within") or {}
-        within = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
+        within = (f" within {_esc(wi['n'])} {_esc(wi.get('unit', ''))}"
+                  if wi.get("n") else "")
         ev = a.get("event", {})
-        out.append(f"⏱ {a.get('direction', '?')} the {ev.get('occurrence', 'first')} "
+        out.append(f"⏱ {_esc(a.get('direction', '?'))} the "
+                   f"{_esc(ev.get('occurrence', 'first'))} "
                    f"<b>{_esc(ev.get('source', '?'))}</b> event "
-                   f"({_esc(', '.join(ev.get('codes', [])))}){within}")
+                   f"({_esc(', '.join(map(str, ev.get('codes', []))))}){within}")
     return out
 
 
@@ -266,11 +275,15 @@ def header_html(n):
     if n.get("node") == "container":
         op = n["op"]
         cls = "op-and" if op == "AND" else "op-or"
-        head = (f"<span class='op-badge {cls}'>{OP_LABEL[op]}</span> "
-                f"<span style='color:#5b6270;font-size:0.88em'>{OP_MEAN[op]}</span>")
+        # OP_LABEL/OP_MEAN via .get — a draft-loaded file may carry a bad op,
+        # and this renders before validation (must not KeyError the page)
+        head = (f"<span class='op-badge {cls}'>{_esc(OP_LABEL.get(op, op))}</span> "
+                f"<span style='color:#5b6270;font-size:0.88em'>"
+                f"{_esc(OP_MEAN.get(op, '?'))}</span>")
         return head + (f" · <b>{_esc(n['label'])}</b>" if n.get("label") else "")
     k = n["kind"]
-    return f"<code>[{k}]</code> <span class='leaf-head'>{_esc(n.get('label') or k)}</span>"
+    return (f"<code>[{_esc(k)}]</code> "
+            f"<span class='leaf-head'>{_esc(n.get('label') or k)}</span>")
 
 
 def body_html(n):
@@ -282,17 +295,17 @@ def body_html(n):
         for f, lab in (("icd", "ICD-10"), ("opcs", "OPCS-4"), ("read", "READ"),
                        ("bnf", "BNF"), ("drug_names", "Drug names")):
             if n.get(f):
-                lines.append(f"{lab}: {_esc(', '.join(n[f]))}")
+                lines.append(f"{lab}: {_esc(', '.join(map(str, n[f])))}")
         lines += _when_lines(n)
     elif k == "measure":
         lines.append(f"source: <b>{_esc(n.get('source', '?'))}</b> · "
                      f"{_esc(n.get('measure', '?'))} {_esc(n.get('op', '?'))} "
-                     f"{_s(n.get('value'))} {_esc(n.get('unit', ''))}")
+                     f"{_esc(_s(n.get('value')))} {_esc(n.get('unit', ''))}")
         lines += _when_lines(n)
     elif k == "demographic":
         bits = []
         if n.get("age_min") is not None or n.get("age_max") is not None:
-            bits.append(f"age {_s(n.get('age_min'))}–{_s(n.get('age_max'))}")
+            bits.append(f"age {_esc(_s(n.get('age_min')))}–{_esc(_s(n.get('age_max')))}")
         if n.get("sex") and n["sex"] != "any":
             bits.append(_esc(n["sex"]))
         if n.get("residence"):
@@ -305,10 +318,12 @@ def body_html(n):
         se = n["sample_event"]
         ev = se["event"]
         wi = se.get("within") or {}
-        w = f" within {wi['n']} {_esc(wi.get('unit', ''))}" if wi.get("n") else ""
-        lines.append(f"≥1 sample {se['direction']} the {ev['occurrence']} "
-                     f"<b>{_esc(ev['type'])}</b> event "
-                     f"({_esc(', '.join(ev.get('codes', [])))}){w}")
+        w = (f" within {_esc(wi['n'])} {_esc(wi.get('unit', ''))}"
+             if wi.get("n") else "")
+        lines.append(f"≥1 sample {_esc(se.get('direction', '?'))} the "
+                     f"{_esc(ev.get('occurrence', '?'))} "
+                     f"<b>{_esc(ev.get('type', '?'))}</b> event "
+                     f"({_esc(', '.join(map(str, ev.get('codes', []))))}){w}")
     elif k == "note":
         lines.append(f"<i>{_esc(n.get('text', ''))}</i>")
     return "<br>".join(lines)
@@ -351,8 +366,9 @@ def render_member(g, n, is_excl=False, sib=None, idx=None, is_root=False, top=Fa
 
         if is_c:
             if not n["members"]:       # visible placeholder so an empty container isn't invisible
-                st.caption(f"empty {OP_LABEL[n['op']]} container ({OP_MEAN[n['op']]}) "
-                           "— use ➕ in the header above to add")
+                op = n.get("op")
+                st.caption(f"empty {OP_LABEL.get(op, op)} container "
+                           f"({OP_MEAN.get(op, '?')}) — use ➕ in the header above to add")
             for j, ch in enumerate(n["members"]):
                 child_path = f"{path}.{j + 1}" if path else str(j + 1)
                 render_member(g, ch, is_excl, n["members"], j, path=child_path)
@@ -745,22 +761,30 @@ def main():
     st.caption("ⓘ This group is one complete cohort: an inclusion set, "
                "then exclusions removed in order.")
 
-    with st.container(border=True):
-        st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
-                    unsafe_allow_html=True)
-        render_member(g, g["inclusion"], is_root=True)
-        if st.button("➕ Add inclusion"):
-            open_modal("add_to", {}, container=g["inclusion"]["_id"])
+    # a DRAFT-loaded (gate-failing) file can carry malformed nodes; rendering
+    # runs before validation, so guard it — a hostile draft shows an error, not
+    # a white screen
+    try:
+        with st.container(border=True):
+            st.markdown("<div class='sec-head sec-inc'>✓ INCLUSION — base population · KEEP</div>",
+                        unsafe_allow_html=True)
+            render_member(g, g["inclusion"], is_root=True)
+            if st.button("➕ Add inclusion"):
+                open_modal("add_to", {}, container=g["inclusion"]["_id"])
 
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-    with st.container(border=True):
-        st.markdown("<div class='sec-head sec-exc'>✕ EXCLUSIONS — removed from the population, in order · REMOVE ↓</div>",
-                    unsafe_allow_html=True)
-        for i, m in enumerate(g["exclusions"]):
-            render_member(g, m, True, g["exclusions"], i, top=True, path=str(i + 1))
-        if st.button("➕ Add exclusion"):
-            open_modal("add_to", {}, container="__EXCL__")
+        with st.container(border=True):
+            st.markdown("<div class='sec-head sec-exc'>✕ EXCLUSIONS — removed from the population, in order · REMOVE ↓</div>",
+                        unsafe_allow_html=True)
+            for i, m in enumerate(g["exclusions"]):
+                render_member(g, m, True, g["exclusions"], i, top=True, path=str(i + 1))
+            if st.button("➕ Add exclusion"):
+                open_modal("add_to", {}, container="__EXCL__")
+    except Exception as e:  # noqa: BLE001 — never let a malformed draft crash the page
+        st.error(f"This group could not be displayed ({type(e).__name__}). It is "
+                 "likely a malformed loaded file — use **New** or load a valid "
+                 "requirement.yaml.")
 
     errs = S.validate(req)
     contract = S.to_contract(req)

@@ -88,7 +88,18 @@ def _int_version(sv):
     if isinstance(sv, int):        # directly — float(10**1000) would overflow
         return sv
     return int(sv) if sv.is_integer() else None
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")   # ASCII digits only
+
+
+def _is_iso_date(s):
+    import datetime
+    if not (isinstance(s, str) and _DATE_RE.match(s)):
+        return False
+    try:                          # reject impossible dates like 2020-99-99
+        datetime.date.fromisoformat(s)
+        return True
+    except ValueError:
+        return False
 _DEMOG_SRC = "demographics"
 
 
@@ -389,13 +400,16 @@ def _parse_legacy_within(s, rec, where):
     return {"n": None, "unit": "months"}
 
 
-def _build_member(d, rec):
+def _build_member(d, rec, depth=1):
     """Inverse of _clean: a contract dict -> a UI node.
 
     DRAFT-mode tolerant: unknown/unparseable members are kept VISIBLE as notes
     and every such coercion is reported via rec(). Semantics are never changed
     silently — check_contract() is the fail-closed path.
     """
+    if depth > MAX_NESTING:      # refuse to recurse into a hostile deep tree
+        rec(f"nesting deeper than {MAX_NESTING} truncated to a note")
+        return new_note("(too deeply nested)", "truncated on load")
     if not isinstance(d, dict):
         rec(f"unparseable member kept as a note: {d!r}")
         return new_note("(unparseable)", str(d))
@@ -405,7 +419,8 @@ def _build_member(d, rec):
         if d.get("op", "AND") not in OPS:
             rec(f"container op {d.get('op')!r} is not AND/OR (kept as authored)")
         return _keep_id(new_container(d.get("op", "AND"), d.get("label", ""),
-                                      [_build_member(m, rec) for m in d.get("members", [])]), d)
+                                      [_build_member(m, rec, depth + 1)
+                                       for m in d.get("members", [])]), d)
     k = d.get("kind")
     lbl = d.get("label", "")
     where = f"'{lbl or k}'"
@@ -529,6 +544,13 @@ _CODE_FIELDS = ("icd", "opcs", "read", "bnf", "drug_names")
 # command arguments, so their shape is part of the output's integrity.
 _CTRL_ANY = re.compile(r"[\x00-\x1f\x7f]")
 _CTRL_NON_WS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# ids are safe tokens: they name CLI output files and appear in generated
+# comments, so no path separators / dots / control chars. Real ids are
+# uuid4 hex[:8]; this bound is generous for hand-authored ones.
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# containers may nest, but not unboundedly: a contract nested past this depth
+# is rejected instead of exhausting the recursion stack (real cohorts are ~3).
+MAX_NESTING = 64
 
 
 def _is_code_list(v):
@@ -570,8 +592,9 @@ def _check_when(w, where, errs):
             errs.append(f"{where}: when.window must be {{from and/or to}}")
         else:
             for k, v in win.items():
-                if not isinstance(v, str) or not _DATE_RE.match(v):
-                    errs.append(f"{where}: when.window.{k} must be an ISO date YYYY-MM-DD")
+                if not _is_iso_date(v):
+                    errs.append(f"{where}: when.window.{k} must be a valid ISO "
+                                "date YYYY-MM-DD")
     a = w.get("anchor")
     if a is not None:
         if not isinstance(a, dict):
@@ -683,12 +706,19 @@ def check_contract(data):
         i = d.get("id")
         if not i:
             errs.append(f"{where}: missing persistent id")
+        elif not (isinstance(i, str) and _ID_RE.match(i)):
+            errs.append(f"{where}: id {i!r} must be 1-64 chars of letters, digits, "
+                        "'-' or '_' (ids name output files and cannot contain "
+                        "path separators)")
         elif i in seen:
             errs.append(f"{where}: duplicate id {i!r}")
         else:
             seen.add(i)
 
-    def member(d, where):
+    def member(d, where, depth=1):
+        if depth > MAX_NESTING:
+            errs.append(f"{where}: nesting deeper than {MAX_NESTING} is not allowed")
+            return
         if not isinstance(d, dict):
             errs.append(f"{where}: member must be a mapping")
             return
@@ -705,7 +735,7 @@ def check_contract(data):
                 errs.append(f"{where}: container members must be a list")
                 return
             for j, m in enumerate(ms, 1):
-                member(m, f"{where} > member {j}")
+                member(m, f"{where} > member {j}", depth + 1)
             return
         k = d.get("kind")
         if k not in KINDS:
@@ -743,8 +773,11 @@ def check_contract(data):
             if d.get("op") not in CMP_OPS:
                 errs.append(f"{where}: measure op {d.get('op')!r} must be one of: "
                             + ", ".join(CMP_OPS))
-            if not isinstance(d.get("value"), (int, float)) or isinstance(d.get("value"), bool):
-                errs.append(f"{where}: measure value must be a number")
+            mv = d.get("value")
+            import math
+            if (not isinstance(mv, (int, float)) or isinstance(mv, bool)
+                    or not math.isfinite(mv)):
+                errs.append(f"{where}: measure value must be a finite number")
             if not d.get("measure"):
                 errs.append(f"{where}: measure name is required")
         elif k == "sample":
@@ -805,9 +838,12 @@ def check_contract(data):
 # Validation (basic shape on the UI tree — level 1; registry conformance is
 # level 2 = registry.check_sources; per-site feasibility is level 3).
 # ---------------------------------------------------------------------------
-def _validate_node(n, gname, errs, path):
+def _validate_node(n, gname, errs, path, depth=1):
     """`path` is the positional address shown in the UI cards, e.g.
     'inclusion 2.1' = first child of the second top-level inclusion item."""
+    if depth > MAX_NESTING:      # defense in depth (callers pre-truncate at 64)
+        errs.append(f"{gname} › {path}: nested too deep")
+        return
     where = f"{gname} › {path}"
     if n.get("node") == "container":
         if n.get("op") not in OPS:
@@ -816,7 +852,7 @@ def _validate_node(n, gname, errs, path):
             errs.append(f"{where}: this {OP_NAME.get(n.get('op'), '?')} container is "
                         "empty — add at least one condition, or remove it.")
         for i, m in enumerate(n.get("members", []), 1):
-            _validate_node(m, gname, errs, f"{path}.{i}")
+            _validate_node(m, gname, errs, f"{path}.{i}", depth + 1)
         return
     k = n.get("kind")
     lbl = n.get("label") or k
@@ -897,12 +933,12 @@ def notes_in(contract_dict):
     e.g. 'Group A › exclusion 2'. Notes block compilation."""
     found = []
 
-    def member(d, path):
-        if not isinstance(d, dict):
+    def member(d, path, depth=1):
+        if depth > MAX_NESTING or not isinstance(d, dict):   # DoS guard
             return
         if "kind" not in d and ("op" in d or "members" in d):
             for i, m in enumerate(d.get("members") or [], 1):
-                member(m, f"{path}.{i}")
+                member(m, f"{path}.{i}", depth + 1)
         elif d.get("kind") == "note":
             found.append((d.get("id", "?"), d.get("label", ""), path))
     for g in (contract_dict or {}).get("cohorts") or []:
