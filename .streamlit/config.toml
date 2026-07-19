@@ -3,6 +3,11 @@
 # buttons/focus, which is hard for red-green colour blindness).
 primaryColor = "#0072B2"
 
+# NOT DEPLOY-READY AS SHIPPED. This config is safe for LOCAL use only
+# (`streamlit run` on your own machine). Before ANY shared/networked deploy,
+# complete DEPLOYMENT.md §1-§3: set the bind address / corsAllowedOrigins below
+# for your topology and put the app behind an authenticating reverse proxy.
+
 [server]
 # cohorts hold criteria, never bulk data — a requirement.yaml is a few KB.
 # Cap uploads well below Streamlit's 200 MB default to blunt memory-DoS.

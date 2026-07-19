@@ -6,10 +6,19 @@ injection-hardened but not internet-facing. It is designed to run **local or
 internal, behind a hardened reverse proxy / identity layer** (see
 `docs/SPEC.md` NFR2a and `plan.md` §6.8). Direct internet exposure is unsafe.
 
-The application code was security-reviewed (`docs/security-review.md`,
-2026-07-19): no exploitable app-code vulnerability. Everything below is the
-**operational** posture the deployment must supply — the app cannot enforce it
-itself.
+The application code has been security-reviewed: no exploitable app-code
+vulnerability. Everything below is the **operational** posture the deployment
+must supply — the app cannot enforce it itself.
+
+> **The repository is NOT deploy-ready as shipped.** The committed config is
+> safe only for **local use** (`streamlit run` on your own machine): it applies
+> the 2 MB upload cap and disables telemetry, but leaves `server.address`
+> unset (binds `0.0.0.0`) and `corsAllowedOrigins` empty. Any shared or
+> networked deployment MUST complete §1–§3 below — supply the
+> topology-specific bind/allowlist values and the proxy/network policy, then
+> **verify** them — before it is safe. These values are deliberately not
+> committed because the correct ones differ per deployment (same-host proxy vs
+> containers).
 
 ## 1. Bind the app so ONLY the proxy can reach it
 
